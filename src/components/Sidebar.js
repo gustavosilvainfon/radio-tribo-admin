@@ -11,13 +11,19 @@ import {
   MegaphoneIcon,
   PhotoIcon,
   Cog6ToothIcon,
-  ChartBarIcon
+  ChartBarIcon,
+  CalendarIcon,
+  GiftIcon,
+  TrophyIcon
 } from '@heroicons/react/24/outline'
 
 const menuItems = [
   { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
   { name: 'Streaming', href: '/streaming', icon: ChartBarIcon },
   { name: 'Notícias', href: '/noticias', icon: NewspaperIcon },
+  { name: 'Programação', href: '/programacao', icon: CalendarIcon },
+  { name: 'Promoções', href: '/promocoes', icon: GiftIcon },
+  { name: 'Top 10', href: '/top10', icon: TrophyIcon },
   { name: 'Tabela de Preços', href: '/precos', icon: CurrencyDollarIcon },
   { name: 'Contatos', href: '/contatos', icon: PhoneIcon },
   { name: 'Pedidos Musicais', href: '/pedidos', icon: MusicalNoteIcon },
