@@ -45,37 +45,39 @@ function SortableItem({ id, item, onEdit, onDelete }) {
         </svg>
       </div>
       
-      <div className="flex justify-between items-start pl-8">
-        <div className="flex-1">
-          <div className="flex items-center space-x-3 mb-2">
-            {item.horario && <span className="text-red-400 font-bold text-sm">{item.horario}</span>}
-            <h3 className="text-lg font-bold text-white">{item.programa}</h3>
+      <div className="flex justify-between items-start pl-6">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center space-x-2 mb-1">
+            {item.horario && <span className="text-red-400 font-bold text-[10px] whitespace-nowrap">{item.horario}</span>}
+            <h3 className="text-sm font-bold text-white truncate">{item.programa}</h3>
           </div>
           {item.apresentador && (
-            <p className="text-purple-300 text-sm mb-1">Apresentador: {item.apresentador}</p>
+            <p className="text-purple-300 text-[10px] mb-0.5 truncate">Apresentador: {item.apresentador}</p>
           )}
           {item.descricao && (
-            <p className="text-gray-400 text-xs line-clamp-2">{item.descricao}</p>
+            <p className="text-gray-400 text-[10px] line-clamp-1">{item.descricao}</p>
           )}
         </div>
-        <div className="flex items-center space-x-2 ml-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center space-x-1 ml-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={(e) => {
               e.stopPropagation();
               onEdit(item);
             }}
-            className="px-3 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 text-blue-300 rounded-lg transition text-xs"
+            className="px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 text-blue-300 rounded transition text-[10px]"
+            title="Editar"
           >
-            Editar
+            ✏️
           </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
               onDelete(item.id);
             }}
-            className="px-3 py-1.5 bg-red-600/30 hover:bg-red-600/50 border border-red-500/50 text-red-300 rounded-lg transition text-xs"
+            className="px-2 py-1 bg-red-600/30 hover:bg-red-600/50 border border-red-500/50 text-red-300 rounded transition text-[10px]"
+            title="Deletar"
           >
-            Deletar
+            🗑️
           </button>
         </div>
       </div>
@@ -112,11 +114,17 @@ export default function ProgramacaoPage() {
     'Domingo'
   ];
 
-  // Horários otimizados: apenas 6h-23h em períodos de 1h
+  // Horários otimizados: períodos de 2h (mais compacto)
   const horarios = [
-    '06:00', '07:00', '08:00', '09:00', '10:00', '11:00',
-    '12:00', '13:00', '14:00', '15:00', '16:00', '17:00',
-    '18:00', '19:00', '20:00', '21:00', '22:00', '23:00'
+    { inicio: '06:00', fim: '08:00', label: '06:00-08:00' },
+    { inicio: '08:00', fim: '10:00', label: '08:00-10:00' },
+    { inicio: '10:00', fim: '12:00', label: '10:00-12:00' },
+    { inicio: '12:00', fim: '14:00', label: '12:00-14:00' },
+    { inicio: '14:00', fim: '16:00', label: '14:00-16:00' },
+    { inicio: '16:00', fim: '18:00', label: '16:00-18:00' },
+    { inicio: '18:00', fim: '20:00', label: '18:00-20:00' },
+    { inicio: '20:00', fim: '22:00', label: '20:00-22:00' },
+    { inicio: '22:00', fim: '00:00', label: '22:00-00:00' }
   ];
 
   const sensors = useSensors(
@@ -164,28 +172,43 @@ export default function ProgramacaoPage() {
     const { active, over } = event;
     setActiveId(null);
 
-    if (!over || active.id === over.id) return;
+    if (!over) return;
 
     const item = programacao.find(p => p.id === parseInt(active.id));
     if (!item) return;
 
     // Se arrastou para um slot da grade
-    if (over.id && over.id.startsWith('slot-')) {
-      const parts = over.id.replace('slot-', '').split('-');
-      const dia = parts[0];
-      const horario = parts.slice(1).join('-'); // Pode ter múltiplos hífens no horário
+    if (over.id && typeof over.id === 'string' && over.id.startsWith('slot-')) {
+      // Buscar o elemento para pegar os data attributes
+      const slotElement = document.getElementById(over.id);
+      if (!slotElement) return;
+
+      const dia = slotElement.dataset.dia;
+      const periodoLabel = slotElement.dataset.periodo;
+      
+      if (!dia || !periodoLabel) return;
+      
+      const periodo = horarios.find(h => h.label === periodoLabel);
+      if (!periodo) return;
+      
+      const novoHorario = `${periodo.inicio} - ${periodo.fim}`;
       
       try {
-        await api.put(`/programacao/${item.id}`, {
-          ...item,
+        const response = await api.put(`/programacao/${item.id}`, {
           diaSemana: dia,
-          horario: horario,
+          horario: novoHorario,
+          programa: item.programa,
+          apresentador: item.apresentador || '',
+          descricao: item.descricao || '',
         });
-        setStatus({ type: 'success', message: 'Programa movido com sucesso.' });
-        loadProgramacao();
+        
+        if (response.data.success) {
+          setStatus({ type: 'success', message: 'Programa movido com sucesso.' });
+          await loadProgramacao();
+        }
       } catch (error) {
         console.error('Erro ao mover programa:', error);
-        setStatus({ type: 'error', message: 'Erro ao mover programa.' });
+        setStatus({ type: 'error', message: error.response?.data?.error || 'Erro ao mover programa.' });
       }
     }
   };
@@ -276,13 +299,12 @@ export default function ProgramacaoPage() {
   const programasNaoAgendados = programacao.filter(p => !p.diaSemana || p.diaSemana === 'Não agendado' || !p.horario);
 
   // Função para encontrar programas em um slot específico
-  const getProgramasNoSlot = (dia, horario) => {
+  const getProgramasNoSlot = (dia, periodo) => {
     return programasAgendados.filter(p => {
       if (p.diaSemana !== dia || !p.horario) return false;
-      // Verifica se o horário do programa contém ou está próximo do horário do slot
+      // Verifica se o horário do programa está dentro do período
       const [hInicio] = p.horario.split(' - ')[0].split(':');
-      const [hSlot] = horario.split(':');
-      return hInicio === hSlot;
+      return hInicio === periodo.inicio.split(':')[0];
     });
   };
 
@@ -374,39 +396,40 @@ export default function ProgramacaoPage() {
             )}
 
             {/* Grade Horária Otimizada */}
-            <div className="bg-black/40 backdrop-blur-lg rounded-xl p-6 border border-gray-700 overflow-x-auto">
-              <h2 className="text-xl font-bold text-white mb-4">Grade Horária Semanal (6h - 23h)</h2>
+            <div className="bg-black/40 backdrop-blur-lg rounded-xl p-4 border border-gray-700 overflow-x-auto">
+              <h2 className="text-lg font-bold text-white mb-3">Grade Horária Semanal</h2>
               <div className="min-w-full">
-                <table className="w-full border-collapse text-sm">
+                <table className="w-full border-collapse text-xs">
                   <thead>
                     <tr>
-                      <th className="border border-gray-700 p-2 text-left text-gray-300 sticky left-0 bg-black/60 z-10 min-w-[80px]">Horário</th>
+                      <th className="border border-gray-700 p-1.5 text-left text-gray-300 sticky left-0 bg-black/60 z-10 min-w-[90px] text-xs">Horário</th>
                       {diasSemana.map((dia) => (
-                        <th key={dia} className="border border-gray-700 p-2 text-center text-gray-300 min-w-[180px] bg-black/40">
+                        <th key={dia} className="border border-gray-700 p-1.5 text-center text-gray-300 min-w-[140px] bg-black/40 text-xs">
                           {dia.split('-')[0]}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {horarios.map((horario) => (
-                      <tr key={horario}>
-                        <td className="border border-gray-700 p-2 text-gray-400 font-mono text-xs sticky left-0 bg-black/60 z-10">
-                          {horario}
+                    {horarios.map((periodo) => (
+                      <tr key={periodo.label}>
+                        <td className="border border-gray-700 p-1.5 text-gray-400 font-mono text-xs sticky left-0 bg-black/60 z-10">
+                          {periodo.label}
                         </td>
                         {diasSemana.map((dia) => {
-                          const slotId = `slot-${dia}-${horario}`;
-                          const programasNoSlot = getProgramasNoSlot(dia, horario);
+                          const slotId = `slot-${dia}-${periodo.label}`;
+                          const programasNoSlot = getProgramasNoSlot(dia, periodo);
                           return (
                             <td
                               key={slotId}
                               id={slotId}
-                              data-slot={slotId}
-                              className="border border-gray-700 p-2 min-h-[80px] bg-black/20 hover:bg-black/40 transition align-top"
+                              data-dia={dia}
+                              data-periodo={periodo.label}
+                              className="border border-gray-700 p-1.5 min-h-[60px] bg-black/20 hover:bg-black/40 transition align-top"
                             >
                               {programasNoSlot.length > 0 ? (
                                 <SortableContext items={programasNoSlot.map(p => p.id.toString())}>
-                                  <div className="space-y-2">
+                                  <div className="space-y-1">
                                     {programasNoSlot.map((item) => (
                                       <SortableItem
                                         key={item.id}
@@ -419,8 +442,8 @@ export default function ProgramacaoPage() {
                                   </div>
                                 </SortableContext>
                               ) : (
-                                <div className="text-gray-600 text-xs text-center py-4 opacity-50">
-                                  Arraste aqui
+                                <div className="text-gray-600 text-[10px] text-center py-2 opacity-50">
+                                  Arraste
                                 </div>
                               )}
                             </td>
