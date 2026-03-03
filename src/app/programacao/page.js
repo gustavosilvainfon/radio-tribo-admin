@@ -172,26 +172,73 @@ export default function ProgramacaoPage() {
     const { active, over } = event;
     setActiveId(null);
 
-    if (!over) return;
+    if (!over) {
+      console.log('Drag cancelado: over é null');
+      return;
+    }
 
     const item = programacao.find(p => p.id === parseInt(active.id));
-    if (!item) return;
+    if (!item) {
+      console.log('Item não encontrado:', active.id);
+      return;
+    }
+
+    console.log('Drag end:', { activeId: active.id, overId: over.id, item });
 
     // Se arrastou para um slot da grade
     if (over.id && typeof over.id === 'string' && over.id.startsWith('slot-')) {
       // Buscar o elemento para pegar os data attributes
       const slotElement = document.getElementById(over.id);
-      if (!slotElement) return;
+      if (!slotElement) {
+        console.log('Slot element não encontrado:', over.id);
+        return;
+      }
 
       const dia = slotElement.dataset.dia;
       const periodoLabel = slotElement.dataset.periodo;
       
-      if (!dia || !periodoLabel) return;
+      console.log('Dados do slot:', { dia, periodoLabel, slotId: over.id });
+      
+      if (!dia || !periodoLabel) {
+        console.log('Dia ou período não encontrado no dataset');
+        return;
+      }
       
       const periodo = horarios.find(h => h.label === periodoLabel);
-      if (!periodo) return;
+      if (!periodo) {
+        console.log('Período não encontrado:', periodoLabel);
+        return;
+      }
       
-      const novoHorario = `${periodo.inicio} - ${periodo.fim}`;
+      // Se o programa já tinha horário, mantém a duração original, só muda o início
+      let novoHorario;
+      if (item.horario && item.horario.includes(' - ')) {
+        const [hInicio, hFim] = item.horario.split(' - ');
+        const [hInicioNum, mInicioNum] = hInicio.split(':').map(Number);
+        const [hFimNum, mFimNum] = hFim.split(':').map(Number);
+        
+        // Calcula a duração em minutos
+        const inicioMinutos = hInicioNum * 60 + mInicioNum;
+        const fimMinutos = hFimNum * 60 + mFimNum;
+        const duracaoMinutos = fimMinutos - inicioMinutos;
+        
+        // Novo horário mantém a duração, mas começa no início do período
+        const novoInicio = periodo.inicio;
+        const [novoHInicio, novoMInicio] = novoInicio.split(':').map(Number);
+        const novoInicioMinutos = novoHInicio * 60 + novoMInicio;
+        const novoFimMinutos = novoInicioMinutos + duracaoMinutos;
+        
+        const novoHFim = Math.floor(novoFimMinutos / 60);
+        const novoMFim = novoFimMinutos % 60;
+        const novoFim = `${String(novoHFim).padStart(2, '0')}:${String(novoMFim).padStart(2, '0')}`;
+        
+        novoHorario = `${novoInicio} - ${novoFim}`;
+      } else {
+        // Se não tinha horário, usa o período completo
+        novoHorario = `${periodo.inicio} - ${periodo.fim}`;
+      }
+      
+      console.log('Salvando programa:', { id: item.id, dia, novoHorario });
       
       try {
         const response = await api.put(`/programacao/${item.id}`, {
@@ -202,14 +249,21 @@ export default function ProgramacaoPage() {
           descricao: item.descricao || '',
         });
         
+        console.log('Resposta do backend:', response.data);
+        
         if (response.data.success) {
           setStatus({ type: 'success', message: 'Programa movido com sucesso.' });
           await loadProgramacao();
+        } else {
+          setStatus({ type: 'error', message: 'Erro ao mover programa.' });
         }
       } catch (error) {
         console.error('Erro ao mover programa:', error);
+        console.error('Detalhes do erro:', error.response?.data);
         setStatus({ type: 'error', message: error.response?.data?.error || 'Erro ao mover programa.' });
       }
+    } else {
+      console.log('Não é um slot válido:', over.id);
     }
   };
 
@@ -302,9 +356,21 @@ export default function ProgramacaoPage() {
   const getProgramasNoSlot = (dia, periodo) => {
     return programasAgendados.filter(p => {
       if (p.diaSemana !== dia || !p.horario) return false;
-      // Verifica se o horário do programa está dentro do período
-      const [hInicio] = p.horario.split(' - ')[0].split(':');
-      return hInicio === periodo.inicio.split(':')[0];
+      
+      // Extrai o horário de início do programa
+      const horarioPrograma = p.horario.split(' - ')[0];
+      const [hProg, mProg] = horarioPrograma.split(':').map(Number);
+      const [hInicio] = periodo.inicio.split(':').map(Number);
+      const [hFim] = periodo.fim.split(':').map(Number);
+      
+      // Verifica se o programa começa dentro do período
+      // Se o período termina em 00:00, considera como 24:00
+      const fimPeriodo = hFim === 0 ? 24 : hFim;
+      const inicioMinutos = hProg * 60 + mProg;
+      const inicioPeriodoMinutos = hInicio * 60;
+      const fimPeriodoMinutos = fimPeriodo * 60;
+      
+      return inicioMinutos >= inicioPeriodoMinutos && inicioMinutos < fimPeriodoMinutos;
     });
   };
 
