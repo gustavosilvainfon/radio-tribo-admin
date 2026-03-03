@@ -24,35 +24,33 @@ function DroppableSlot({ id, horario, dia, programas, onEdit, onDelete }) {
   return (
     <div
       ref={setNodeRef}
-      className={`border border-gray-700 rounded-lg p-3 bg-black/20 hover:bg-black/40 transition min-h-[70px] ${
+      className={`border border-gray-700 rounded-lg p-2 bg-black/20 hover:bg-black/40 transition min-h-[120px] ${
         isOver ? 'bg-purple-500/30 border-purple-500' : ''
       }`}
     >
-      <div className="flex items-start space-x-4">
-        <div className="flex-shrink-0 w-20 text-gray-400 font-mono text-sm">
-          {horario}
-        </div>
-        <div className="flex-1 min-w-0">
-          {programas.length > 0 ? (
-            <SortableContext items={programas.map(p => p.id.toString())}>
-              <div className="space-y-2">
-                {programas.map((item) => (
-                  <SortableItem
-                    key={item.id}
-                    id={item.id.toString()}
-                    item={item}
-                    onEdit={onEdit}
-                    onDelete={onDelete}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          ) : (
-            <div className="text-gray-600 text-xs text-center py-4 opacity-50">
-              Arraste aqui
+      <div className="text-gray-400 font-mono text-xs font-bold mb-2 text-center border-b border-gray-700 pb-1">
+        {horario}
+      </div>
+      <div className="min-h-[90px]">
+        {programas.length > 0 ? (
+          <SortableContext items={programas.map(p => p.id.toString())}>
+            <div className="space-y-1.5">
+              {programas.map((item) => (
+                <SortableItem
+                  key={item.id}
+                  id={item.id.toString()}
+                  item={item}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                />
+              ))}
             </div>
-          )}
-        </div>
+          </SortableContext>
+        ) : (
+          <div className="text-gray-600 text-[10px] text-center py-6 opacity-50">
+            Arraste aqui
+          </div>
+        )}
       </div>
     </div>
   );
@@ -93,26 +91,29 @@ function SortableItem({ id, item, onEdit, onDelete }) {
         </svg>
       </div>
       
-      <div className="flex justify-between items-start pl-6">
+      <div className="flex flex-col pl-5">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center space-x-2 mb-1">
-            {item.horario && <span className="text-red-400 font-bold text-[10px] whitespace-nowrap">{item.horario}</span>}
-            <h3 className="text-sm font-bold text-white truncate">{item.programa}</h3>
-          </div>
+          <h3 className="text-[11px] font-bold text-white truncate mb-0.5" title={item.programa}>
+            {item.programa}
+          </h3>
           {item.apresentador && (
-            <p className="text-purple-300 text-[10px] mb-0.5 truncate">{item.apresentador}</p>
+            <p className="text-purple-300 text-[9px] truncate mb-1" title={item.apresentador}>
+              {item.apresentador}
+            </p>
           )}
-          {item.descricao && (
-            <p className="text-gray-400 text-[10px] line-clamp-1">{item.descricao}</p>
+          {item.horario && item.horario.includes(' - ') && (
+            <p className="text-red-400 text-[8px] mb-1">
+              {item.horario.split(' - ')[0]} - {item.horario.split(' - ')[1]}
+            </p>
           )}
         </div>
-        <div className="flex items-center space-x-1 ml-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end space-x-1 mt-1" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={(e) => {
               e.stopPropagation();
               onEdit(item);
             }}
-            className="px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 text-blue-300 rounded transition text-[10px]"
+            className="px-1.5 py-0.5 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 text-blue-300 rounded transition text-[9px]"
             title="Editar"
           >
             ✏️
@@ -122,7 +123,7 @@ function SortableItem({ id, item, onEdit, onDelete }) {
               e.stopPropagation();
               onDelete(item.id);
             }}
-            className="px-2 py-1 bg-red-600/30 hover:bg-red-600/50 border border-red-500/50 text-red-300 rounded transition text-[10px]"
+            className="px-1.5 py-0.5 bg-red-600/30 hover:bg-red-600/50 border border-red-500/50 text-red-300 rounded transition text-[9px]"
             title="Deletar"
           >
             🗑️
@@ -480,10 +481,10 @@ export default function ProgramacaoPage() {
               </div>
             )}
 
-            {/* Grade Horária do Dia Selecionado */}
+            {/* Grade Horária do Dia Selecionado - Layout 6x4 (6 colunas × 4 linhas) */}
             <div className="bg-black/40 backdrop-blur-lg rounded-xl p-4 border border-gray-700">
-              <h2 className="text-lg font-bold text-white mb-4">Grade Horária 24h - {selectedDia}</h2>
-              <div className="space-y-2">
+              <h2 className="text-lg font-bold text-white mb-4">Grade Horária 24h (6×4) - {selectedDia}</h2>
+              <div className="grid grid-cols-6 gap-2">
                 {horarios.map((horario) => {
                   const programasNoHorario = getProgramasNoHorario(selectedDia, horario);
                   return (
