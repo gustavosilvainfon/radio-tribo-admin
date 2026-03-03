@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
+import StatusAlert from '@/components/StatusAlert';
 
 export default function Top10Page() {
   const router = useRouter();
@@ -10,6 +11,7 @@ export default function Top10Page() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [status, setStatus] = useState({ type: null, message: '' });
   const [formData, setFormData] = useState({
     posicao: 1,
     musica: '',
@@ -38,6 +40,7 @@ export default function Top10Page() {
       }
     } catch (error) {
       console.error('Erro ao carregar Top 10:', error);
+      setStatus({ type: 'error', message: 'Erro ao carregar Top 10.' });
     } finally {
       setLoading(false);
     }
@@ -45,11 +48,19 @@ export default function Top10Page() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!formData.musica.trim() || !formData.artista.trim()) {
+      setStatus({ type: 'error', message: 'Preencha os campos obrigatórios (Música e Artista).' });
+      return;
+    }
+
     try {
       if (editingItem) {
         await api.put(`/top10/${editingItem.id}`, formData);
+        setStatus({ type: 'success', message: 'Música atualizada no Top 10 com sucesso.' });
       } else {
         await api.post('/top10', formData);
+        setStatus({ type: 'success', message: 'Música adicionada ao Top 10 com sucesso.' });
       }
       setShowModal(false);
       setEditingItem(null);
@@ -63,7 +74,10 @@ export default function Top10Page() {
       loadTop10();
     } catch (error) {
       console.error('Erro ao salvar Top 10:', error);
-      alert(error.response?.data?.error || 'Erro ao salvar item do Top 10');
+      setStatus({
+        type: 'error',
+        message: error.response?.data?.error || 'Erro ao salvar item do Top 10.',
+      });
     }
   };
 
@@ -87,7 +101,7 @@ export default function Top10Page() {
       loadTop10();
     } catch (error) {
       console.error('Erro ao deletar item do Top 10:', error);
-      alert('Erro ao deletar item');
+      setStatus({ type: 'error', message: 'Erro ao deletar item do Top 10.' });
     }
   };
 
@@ -119,6 +133,10 @@ export default function Top10Page() {
 
   return (
     <div className="max-w-7xl mx-auto">
+      <StatusAlert
+        status={status}
+        onClose={() => setStatus({ type: null, message: '' })}
+      />
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-4xl font-black bg-gradient-to-r from-red-500 via-purple-500 to-red-500 bg-clip-text text-transparent">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
+import StatusAlert from '@/components/StatusAlert';
 
 export default function PromocoesPage() {
   const router = useRouter();
@@ -10,6 +11,7 @@ export default function PromocoesPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingPromocao, setEditingPromocao] = useState(null);
+  const [status, setStatus] = useState({ type: null, message: '' });
   const [formData, setFormData] = useState({
     titulo: '',
     descricao: '',
@@ -39,6 +41,7 @@ export default function PromocoesPage() {
       }
     } catch (error) {
       console.error('Erro ao carregar promoções:', error);
+      setStatus({ type: 'error', message: 'Erro ao carregar promoções.' });
     } finally {
       setLoading(false);
     }
@@ -46,11 +49,19 @@ export default function PromocoesPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!formData.titulo.trim() || !formData.descricao.trim()) {
+      setStatus({ type: 'error', message: 'Preencha Título e Descrição da promoção.' });
+      return;
+    }
+
     try {
       if (editingPromocao) {
         await api.put(`/promocoes/${editingPromocao.id}`, formData);
+        setStatus({ type: 'success', message: 'Promoção atualizada com sucesso.' });
       } else {
         await api.post('/promocoes', formData);
+        setStatus({ type: 'success', message: 'Promoção criada com sucesso.' });
       }
       setShowModal(false);
       setEditingPromocao(null);
@@ -65,7 +76,7 @@ export default function PromocoesPage() {
       loadPromocoes();
     } catch (error) {
       console.error('Erro ao salvar promoção:', error);
-      alert('Erro ao salvar promoção');
+      setStatus({ type: 'error', message: 'Erro ao salvar promoção.' });
     }
   };
 
@@ -90,7 +101,7 @@ export default function PromocoesPage() {
       loadPromocoes();
     } catch (error) {
       console.error('Erro ao deletar promoção:', error);
-      alert('Erro ao deletar promoção');
+      setStatus({ type: 'error', message: 'Erro ao deletar promoção.' });
     }
   };
 
@@ -100,7 +111,7 @@ export default function PromocoesPage() {
       loadPromocoes();
     } catch (error) {
       console.error('Erro ao alterar status da promoção:', error);
-      alert('Erro ao alterar status');
+      setStatus({ type: 'error', message: 'Erro ao alterar status da promoção.' });
     }
   };
 
@@ -130,6 +141,10 @@ export default function PromocoesPage() {
 
   return (
     <div className="max-w-7xl mx-auto">
+      <StatusAlert
+        status={status}
+        onClose={() => setStatus({ type: null, message: '' })}
+      />
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-4xl font-black bg-gradient-to-r from-red-500 via-purple-500 to-red-500 bg-clip-text text-transparent">

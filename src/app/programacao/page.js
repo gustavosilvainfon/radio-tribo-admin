@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
+import StatusAlert from '@/components/StatusAlert';
 
 export default function ProgramacaoPage() {
   const router = useRouter();
@@ -10,6 +11,7 @@ export default function ProgramacaoPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [status, setStatus] = useState({ type: null, message: '' });
   const [formData, setFormData] = useState({
     diaSemana: 'Segunda-feira',
     horario: '',
@@ -48,6 +50,7 @@ export default function ProgramacaoPage() {
       }
     } catch (error) {
       console.error('Erro ao carregar programação:', error);
+      setStatus({ type: 'error', message: 'Erro ao carregar programação.' });
     } finally {
       setLoading(false);
     }
@@ -55,11 +58,19 @@ export default function ProgramacaoPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!formData.horario.trim() || !formData.programa.trim()) {
+      setStatus({ type: 'error', message: 'Preencha os campos obrigatórios (Horário e Programa).' });
+      return;
+    }
+
     try {
       if (editingItem) {
         await api.put(`/programacao/${editingItem.id}`, formData);
+        setStatus({ type: 'success', message: 'Programa atualizado com sucesso.' });
       } else {
         await api.post('/programacao', formData);
+        setStatus({ type: 'success', message: 'Programa criado com sucesso.' });
       }
       setShowModal(false);
       setEditingItem(null);
@@ -73,7 +84,7 @@ export default function ProgramacaoPage() {
       loadProgramacao();
     } catch (error) {
       console.error('Erro ao salvar programação:', error);
-      alert('Erro ao salvar programação');
+      setStatus({ type: 'error', message: 'Erro ao salvar programação.' });
     }
   };
 
@@ -97,7 +108,7 @@ export default function ProgramacaoPage() {
       loadProgramacao();
     } catch (error) {
       console.error('Erro ao deletar programação:', error);
-      alert('Erro ao deletar programação');
+      setStatus({ type: 'error', message: 'Erro ao deletar programação.' });
     }
   };
 
@@ -135,6 +146,10 @@ export default function ProgramacaoPage() {
 
   return (
     <div className="max-w-7xl mx-auto">
+      <StatusAlert
+        status={status}
+        onClose={() => setStatus({ type: null, message: '' })}
+      />
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-4xl font-black bg-gradient-to-r from-red-500 via-purple-500 to-red-500 bg-clip-text text-transparent">
