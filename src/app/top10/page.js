@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import StatusAlert from '@/components/StatusAlert';
+import DeleteConfirmModal from '@/components/DeleteConfirmModal';
+import LoadingButton from '@/components/LoadingButton';
 
 export default function Top10Page() {
   const router = useRouter();
@@ -18,7 +20,10 @@ export default function Top10Page() {
     artista: '',
     votos: 0,
     imagem: '',
+    link: '',
   });
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -54,6 +59,7 @@ export default function Top10Page() {
       return;
     }
 
+    setSaving(true);
     try {
       if (editingItem) {
         await api.put(`/top10/${editingItem.id}`, formData);
@@ -70,6 +76,7 @@ export default function Top10Page() {
         artista: '',
         votos: 0,
         imagem: '',
+        link: '',
       });
       loadTop10();
     } catch (error) {
@@ -78,6 +85,8 @@ export default function Top10Page() {
         type: 'error',
         message: error.response?.data?.error || 'Erro ao salvar item do Top 10.',
       });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -89,19 +98,25 @@ export default function Top10Page() {
       artista: item.artista,
       votos: item.votos || 0,
       imagem: item.imagem || '',
+      link: item.link || '',
     });
     setShowModal(true);
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Tem certeza que deseja deletar este item do Top 10?')) return;
-    
+    setDeleteConfirm({ isOpen: true, id });
+  };
+
+  const confirmDelete = async () => {
     try {
-      await api.delete(`/top10/${id}`);
+      await api.delete(`/top10/${deleteConfirm.id}`);
+      setStatus({ type: 'success', message: 'Item deletado com sucesso.' });
       loadTop10();
     } catch (error) {
       console.error('Erro ao deletar item do Top 10:', error);
       setStatus({ type: 'error', message: 'Erro ao deletar item do Top 10.' });
+    } finally {
+      setDeleteConfirm({ isOpen: false, id: null });
     }
   };
 
@@ -113,6 +128,7 @@ export default function Top10Page() {
       artista: '',
       votos: 0,
       imagem: '',
+      link: '',
     });
     setShowModal(true);
   };
@@ -203,6 +219,16 @@ export default function Top10Page() {
                   <p className="text-purple-300 mb-2">{item.artista}</p>
                   <div className="flex items-center space-x-4 text-sm text-gray-400">
                     <span>🎵 {item.votos} votos</span>
+                    {item.link && (
+                      <a
+                        href={item.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 transition flex items-center space-x-1"
+                      >
+                        <span>🔗 Ouvir</span>
+                      </a>
+                    )}
                   </div>
                 </div>
 
@@ -315,6 +341,19 @@ export default function Top10Page() {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Link da Música (YouTube, Spotify, etc.)
+                </label>
+                <input
+                  type="url"
+                  value={formData.link}
+                  onChange={(e) => setFormData({ ...formData, link: e.target.value })}
+                  className="w-full px-4 py-3 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition"
+                  placeholder="https://youtube.com/watch?v=... ou https://open.spotify.com/track/..."
+                />
+              </div>
+
               <div className="flex justify-end space-x-4 pt-4">
                 <button
                   type="button"
@@ -323,17 +362,26 @@ export default function Top10Page() {
                 >
                   Cancelar
                 </button>
-                <button
+                <LoadingButton
                   type="submit"
+                  loading={saving}
                   className="px-6 py-3 bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-700 hover:to-purple-700 text-white font-bold rounded-lg transition"
                 >
                   {editingItem ? 'Atualizar' : 'Criar'} Música
-                </button>
+                </LoadingButton>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      <DeleteConfirmModal
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, id: null })}
+        onConfirm={confirmDelete}
+        title="Deletar Música do Top 10"
+        message="Tem certeza que deseja deletar esta música do Top 10? Esta ação não pode ser desfeita."
+      />
     </div>
   );
 }

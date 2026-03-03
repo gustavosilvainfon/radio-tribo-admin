@@ -2,8 +2,70 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import api from '@/lib/api';
 import StatusAlert from '@/components/StatusAlert';
+import DeleteConfirmModal from '@/components/DeleteConfirmModal';
+import LoadingButton from '@/components/LoadingButton';
+
+// Componente de item arrastável
+function SortableItem({ id, item, onEdit, onDelete }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className="bg-black/40 rounded-lg p-4 border border-purple-500/30 cursor-move hover:border-purple-500/60 transition"
+    >
+      <div className="flex justify-between items-start">
+        <div className="flex-1">
+          <div className="flex items-center space-x-3 mb-2">
+            {item.horario && <span className="text-red-400 font-bold">{item.horario}</span>}
+            <h3 className="text-xl font-bold text-white">{item.programa}</h3>
+          </div>
+          {item.apresentador && (
+            <p className="text-purple-300 mb-2">Apresentador: {item.apresentador}</p>
+          )}
+          {item.descricao && (
+            <p className="text-gray-400 text-sm">{item.descricao}</p>
+          )}
+        </div>
+        <div className="flex items-center space-x-2 ml-4" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => onEdit(item)}
+            className="px-4 py-2 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 text-blue-300 rounded-lg transition text-sm"
+          >
+            Editar
+          </button>
+          <button
+            onClick={() => onDelete(item.id)}
+            className="px-4 py-2 bg-red-600/30 hover:bg-red-600/50 border border-red-500/50 text-red-300 rounded-lg transition text-sm"
+          >
+            Deletar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ProgramacaoPage() {
   const router = useRouter();
@@ -12,8 +74,11 @@ export default function ProgramacaoPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [status, setStatus] = useState({ type: null, message: '' });
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null });
+  const [saving, setSaving] = useState(false);
+  const [viewMode, setViewMode] = useState('grade'); // 'grade' ou 'lista'
   const [formData, setFormData] = useState({
-    diaSemana: 'Segunda-feira',
+    diaSemana: '',
     horario: '',
     programa: '',
     apresentador: '',
@@ -29,6 +94,20 @@ export default function ProgramacaoPage() {
     'Sábado',
     'Domingo'
   ];
+
+  const horarios = [
+    '00:00', '01:00', '02:00', '03:00', '04:00', '05:00',
+    '06:00', '07:00', '08:00', '09:00', '10:00', '11:00',
+    '12:00', '13:00', '14:00', '15:00', '16:00', '17:00',
+    '18:00', '19:00', '20:00', '21:00', '22:00', '23:00'
+  ];
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     checkAuth();
@@ -56,26 +135,69 @@ export default function ProgramacaoPage() {
     }
   };
 
+  const handleDragEnd = async (event) => {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) return;
+
+    // Se arrastou para um slot da grade
+    if (over.id.startsWith('slot-')) {
+      const [dia, horario] = over.id.replace('slot-', '').split('-');
+      const item = programacao.find(p => p.id === parseInt(active.id));
+      
+      if (item) {
+        try {
+          await api.put(`/programacao/${item.id}`, {
+            ...item,
+            diaSemana: dia,
+            horario: horario,
+          });
+          setStatus({ type: 'success', message: 'Programa movido com sucesso.' });
+          loadProgramacao();
+        } catch (error) {
+          console.error('Erro ao mover programa:', error);
+          setStatus({ type: 'error', message: 'Erro ao mover programa.' });
+        }
+      }
+    } else {
+      // Reordenar dentro da mesma lista
+      const oldIndex = programacao.findIndex(p => p.id === parseInt(active.id));
+      const newIndex = programacao.findIndex(p => p.id === parseInt(over.id));
+      
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newProgramacao = arrayMove(programacao, oldIndex, newIndex);
+        setProgramacao(newProgramacao);
+      }
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.horario.trim() || !formData.programa.trim()) {
-      setStatus({ type: 'error', message: 'Preencha os campos obrigatórios (Horário e Programa).' });
+    if (!formData.programa.trim()) {
+      setStatus({ type: 'error', message: 'Preencha o nome do programa.' });
       return;
     }
 
+    setSaving(true);
     try {
       if (editingItem) {
         await api.put(`/programacao/${editingItem.id}`, formData);
         setStatus({ type: 'success', message: 'Programa atualizado com sucesso.' });
       } else {
-        await api.post('/programacao', formData);
+        // Se não tem dia/horário, cria sem (fica na lista de não agendados)
+        const dataToSend = {
+          ...formData,
+          diaSemana: formData.diaSemana || 'Não agendado',
+          horario: formData.horario || '',
+        };
+        await api.post('/programacao', dataToSend);
         setStatus({ type: 'success', message: 'Programa criado com sucesso.' });
       }
       setShowModal(false);
       setEditingItem(null);
       setFormData({
-        diaSemana: 'Segunda-feira',
+        diaSemana: '',
         horario: '',
         programa: '',
         apresentador: '',
@@ -85,14 +207,16 @@ export default function ProgramacaoPage() {
     } catch (error) {
       console.error('Erro ao salvar programação:', error);
       setStatus({ type: 'error', message: 'Erro ao salvar programação.' });
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleEdit = (item) => {
     setEditingItem(item);
     setFormData({
-      diaSemana: item.diaSemana,
-      horario: item.horario,
+      diaSemana: item.diaSemana || '',
+      horario: item.horario || '',
       programa: item.programa,
       apresentador: item.apresentador || '',
       descricao: item.descricao || '',
@@ -100,22 +224,27 @@ export default function ProgramacaoPage() {
     setShowModal(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Tem certeza que deseja deletar este item da programação?')) return;
-    
+  const handleDelete = (id) => {
+    setDeleteConfirm({ isOpen: true, id });
+  };
+
+  const confirmDelete = async () => {
     try {
-      await api.delete(`/programacao/${id}`);
+      await api.delete(`/programacao/${deleteConfirm.id}`);
+      setStatus({ type: 'success', message: 'Programa deletado com sucesso.' });
       loadProgramacao();
     } catch (error) {
       console.error('Erro ao deletar programação:', error);
       setStatus({ type: 'error', message: 'Erro ao deletar programação.' });
+    } finally {
+      setDeleteConfirm({ isOpen: false, id: null });
     }
   };
 
   const openNewModal = () => {
     setEditingItem(null);
     setFormData({
-      diaSemana: 'Segunda-feira',
+      diaSemana: '',
       horario: '',
       programa: '',
       apresentador: '',
@@ -124,14 +253,20 @@ export default function ProgramacaoPage() {
     setShowModal(true);
   };
 
-  // Agrupar por dia da semana
-  const programacaoPorDia = programacao.reduce((acc, item) => {
-    if (!acc[item.diaSemana]) {
-      acc[item.diaSemana] = [];
-    }
-    acc[item.diaSemana].push(item);
-    return acc;
-  }, {});
+  // Separar programas agendados e não agendados
+  const programasAgendados = programacao.filter(p => p.diaSemana && p.diaSemana !== 'Não agendado' && p.horario);
+  const programasNaoAgendados = programacao.filter(p => !p.diaSemana || p.diaSemana === 'Não agendado' || !p.horario);
+
+  // Agrupar por dia e horário para a grade
+  const gradeData = {};
+  diasSemana.forEach(dia => {
+    gradeData[dia] = {};
+    horarios.forEach(horario => {
+      gradeData[dia][horario] = programasAgendados.filter(
+        p => p.diaSemana === dia && p.horario && p.horario.includes(horario)
+      );
+    });
+  });
 
   if (loading) {
     return (
@@ -145,199 +280,282 @@ export default function ProgramacaoPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <StatusAlert
-        status={status}
-        onClose={() => setStatus({ type: null, message: '' })}
-      />
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-4xl font-black bg-gradient-to-r from-red-500 via-purple-500 to-red-500 bg-clip-text text-transparent">
-            Gerenciar Programação
-          </h1>
-          <p className="text-gray-400 mt-2">Gerencie os horários e programas da rádio</p>
-        </div>
-        <button
-          onClick={openNewModal}
-          className="px-6 py-3 bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-700 hover:to-purple-700 text-white font-bold rounded-lg transition transform hover:scale-105"
-        >
-          + Novo Programa
-        </button>
-      </div>
-
-      {/* Lista de Programação por Dia */}
-      {Object.keys(programacaoPorDia).length === 0 ? (
-        <div className="bg-black/40 backdrop-blur-lg rounded-xl p-12 text-center border border-gray-700">
-          <p className="text-gray-400 text-lg">Nenhum programa cadastrado ainda</p>
-          <button
-            onClick={openNewModal}
-            className="mt-4 px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition"
-          >
-            Criar Primeiro Programa
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {diasSemana.map((dia) => {
-            const itemsDoDia = programacaoPorDia[dia] || [];
-            if (itemsDoDia.length === 0) return null;
-
-            return (
-              <div
-                key={dia}
-                className="bg-gradient-to-br from-black/60 to-black/40 backdrop-blur-lg rounded-xl p-6 border-2 border-red-500/30 shadow-xl"
-              >
-                <h2 className="text-2xl font-bold text-white mb-4">{dia}</h2>
-                <div className="space-y-3">
-                  {itemsDoDia.map((item) => (
-                    <div
-                      key={item.id}
-                      className="bg-black/40 rounded-lg p-4 border border-purple-500/30 flex justify-between items-start"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-2">
-                          <span className="text-red-400 font-bold">{item.horario}</span>
-                          <h3 className="text-xl font-bold text-white">{item.programa}</h3>
-                        </div>
-                        {item.apresentador && (
-                          <p className="text-purple-300 mb-2">Apresentador: {item.apresentador}</p>
-                        )}
-                        {item.descricao && (
-                          <p className="text-gray-400 text-sm">{item.descricao}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center space-x-2 ml-4">
-                        <button
-                          onClick={() => handleEdit(item)}
-                          className="px-4 py-2 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 text-blue-300 rounded-lg transition text-sm"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="px-4 py-2 bg-red-600/30 hover:bg-red-600/50 border border-red-500/50 text-red-300 rounded-lg transition text-sm"
-                        >
-                          Deletar
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Modal de Criar/Editar */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gradient-to-br from-black/90 to-black/70 backdrop-blur-xl rounded-2xl p-8 border-2 border-red-500/50 shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-white">
-                {editingItem ? 'Editar Programa' : 'Novo Programa'}
-              </h2>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <div className="max-w-7xl mx-auto">
+        <StatusAlert
+          status={status}
+          onClose={() => setStatus({ type: null, message: '' })}
+        />
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-4xl font-black bg-gradient-to-r from-red-500 via-purple-500 to-red-500 bg-clip-text text-transparent">
+              Gerenciar Programação
+            </h1>
+            <p className="text-gray-400 mt-2">Gerencie os horários e programas da rádio</p>
+          </div>
+          <div className="flex items-center space-x-4">
+            <div className="flex bg-black/40 rounded-lg p-1 border border-gray-700">
               <button
-                onClick={() => setShowModal(false)}
-                className="text-gray-400 hover:text-white transition"
+                onClick={() => setViewMode('grade')}
+                className={`px-4 py-2 rounded transition ${
+                  viewMode === 'grade'
+                    ? 'bg-red-600 text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
               >
-                ✕
+                Grade Horária
+              </button>
+              <button
+                onClick={() => setViewMode('lista')}
+                className={`px-4 py-2 rounded transition ${
+                  viewMode === 'lista'
+                    ? 'bg-red-600 text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Lista
               </button>
             </div>
+            <button
+              onClick={openNewModal}
+              className="px-6 py-3 bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-700 hover:to-purple-700 text-white font-bold rounded-lg transition transform hover:scale-105"
+            >
+              + Novo Programa
+            </button>
+          </div>
+        </div>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Dia da Semana *
-                  </label>
-                  <select
-                    value={formData.diaSemana}
-                    onChange={(e) => setFormData({ ...formData, diaSemana: e.target.value })}
-                    className="w-full px-4 py-3 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition"
-                    required
-                  >
-                    {diasSemana.map((dia) => (
-                      <option key={dia} value={dia}>{dia}</option>
+        {viewMode === 'grade' ? (
+          <>
+            {/* Lista de Programas Não Agendados */}
+            {programasNaoAgendados.length > 0 && (
+              <div className="mb-8 bg-black/40 backdrop-blur-lg rounded-xl p-6 border border-gray-700">
+                <h2 className="text-xl font-bold text-white mb-4">Programas Não Agendados</h2>
+                <p className="text-gray-400 text-sm mb-4">Arraste para a grade horária abaixo para agendar</p>
+                <SortableContext items={programasNaoAgendados.map(p => p.id.toString())}>
+                  <div className="space-y-3">
+                    {programasNaoAgendados.map((item) => (
+                      <SortableItem
+                        key={item.id}
+                        id={item.id.toString()}
+                        item={item}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                      />
                     ))}
-                  </select>
-                </div>
+                  </div>
+                </SortableContext>
+              </div>
+            )}
 
+            {/* Grade Horária */}
+            <div className="bg-black/40 backdrop-blur-lg rounded-xl p-6 border border-gray-700 overflow-x-auto">
+              <h2 className="text-xl font-bold text-white mb-4">Grade Horária Semanal</h2>
+              <div className="min-w-full">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr>
+                      <th className="border border-gray-700 p-2 text-left text-gray-300">Horário</th>
+                      {diasSemana.map((dia) => (
+                        <th key={dia} className="border border-gray-700 p-2 text-center text-gray-300 min-w-[200px]">
+                          {dia.split('-')[0]}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {horarios.map((horario) => (
+                      <tr key={horario}>
+                        <td className="border border-gray-700 p-2 text-gray-400 font-mono text-sm">
+                          {horario}
+                        </td>
+                        {diasSemana.map((dia) => {
+                          const slotId = `slot-${dia}-${horario}`;
+                          const programasNoSlot = programasAgendados.filter(
+                            p => p.diaSemana === dia && p.horario && p.horario.includes(horario)
+                          );
+                          return (
+                            <td
+                              key={slotId}
+                              id={slotId}
+                              className="border border-gray-700 p-2 min-h-[60px] bg-black/20 hover:bg-black/40 transition"
+                            >
+                              {programasNoSlot.length > 0 ? (
+                                <SortableContext items={programasNoSlot.map(p => p.id.toString())}>
+                                  {programasNoSlot.map((item) => (
+                                    <SortableItem
+                                      key={item.id}
+                                      id={item.id.toString()}
+                                      item={item}
+                                      onEdit={handleEdit}
+                                      onDelete={handleDelete}
+                                    />
+                                  ))}
+                                </SortableContext>
+                              ) : (
+                                <div className="text-gray-600 text-xs text-center py-2">
+                                  Arraste aqui
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        ) : (
+          /* Vista de Lista */
+          <div className="space-y-6">
+            {diasSemana.map((dia) => {
+              const itemsDoDia = programasAgendados.filter(p => p.diaSemana === dia);
+              if (itemsDoDia.length === 0) return null;
+
+              return (
+                <div
+                  key={dia}
+                  className="bg-gradient-to-br from-black/60 to-black/40 backdrop-blur-lg rounded-xl p-6 border-2 border-red-500/30 shadow-xl"
+                >
+                  <h2 className="text-2xl font-bold text-white mb-4">{dia}</h2>
+                  <SortableContext items={itemsDoDia.map(p => p.id.toString())}>
+                    <div className="space-y-3">
+                      {itemsDoDia.map((item) => (
+                        <SortableItem
+                          key={item.id}
+                          id={item.id.toString()}
+                          item={item}
+                          onEdit={handleEdit}
+                          onDelete={handleDelete}
+                        />
+                      ))}
+                    </div>
+                  </SortableContext>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Modal de Criar/Editar */}
+        {showModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-gradient-to-br from-black/90 to-black/70 backdrop-blur-xl rounded-2xl p-8 border-2 border-red-500/50 shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-white">
+                  {editingItem ? 'Editar Programa' : 'Novo Programa'}
+                </h2>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="text-gray-400 hover:text-white transition"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Horário * (ex: 06:00 - 10:00)
+                    Nome do Programa *
                   </label>
                   <input
                     type="text"
-                    value={formData.horario}
-                    onChange={(e) => setFormData({ ...formData, horario: e.target.value })}
+                    value={formData.programa}
+                    onChange={(e) => setFormData({ ...formData, programa: e.target.value })}
                     className="w-full px-4 py-3 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition"
-                    placeholder="06:00 - 10:00"
+                    placeholder="Ex: Manhã Tribo"
                     required
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Nome do Programa *
-                </label>
-                <input
-                  type="text"
-                  value={formData.programa}
-                  onChange={(e) => setFormData({ ...formData, programa: e.target.value })}
-                  className="w-full px-4 py-3 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition"
-                  placeholder="Ex: Manhã Tribo"
-                  required
-                />
-              </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Dia da Semana (opcional)
+                    </label>
+                    <select
+                      value={formData.diaSemana}
+                      onChange={(e) => setFormData({ ...formData, diaSemana: e.target.value })}
+                      className="w-full px-4 py-3 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition"
+                    >
+                      <option value="">Não agendado</option>
+                      {diasSemana.map((dia) => (
+                        <option key={dia} value={dia}>{dia}</option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Apresentador
-                </label>
-                <input
-                  type="text"
-                  value={formData.apresentador}
-                  onChange={(e) => setFormData({ ...formData, apresentador: e.target.value })}
-                  className="w-full px-4 py-3 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition"
-                  placeholder="Ex: DJ João"
-                />
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Horário (opcional, ex: 06:00 - 10:00)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.horario}
+                      onChange={(e) => setFormData({ ...formData, horario: e.target.value })}
+                      className="w-full px-4 py-3 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition"
+                      placeholder="06:00 - 10:00"
+                    />
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Descrição
-                </label>
-                <textarea
-                  value={formData.descricao}
-                  onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
-                  className="w-full px-4 py-3 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition resize-none"
-                  placeholder="Descrição do programa"
-                  rows="3"
-                />
-              </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Apresentador
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.apresentador}
+                    onChange={(e) => setFormData({ ...formData, apresentador: e.target.value })}
+                    className="w-full px-4 py-3 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition"
+                    placeholder="Ex: DJ João"
+                  />
+                </div>
 
-              <div className="flex justify-end space-x-4 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-3 bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-700 hover:to-purple-700 text-white font-bold rounded-lg transition"
-                >
-                  {editingItem ? 'Atualizar' : 'Criar'} Programa
-                </button>
-              </div>
-            </form>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Descrição
+                  </label>
+                  <textarea
+                    value={formData.descricao}
+                    onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
+                    className="w-full px-4 py-3 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition resize-none"
+                    placeholder="Descrição do programa"
+                    rows="3"
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-4 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition"
+                  >
+                    Cancelar
+                  </button>
+                  <LoadingButton
+                    type="submit"
+                    loading={saving}
+                    className="px-6 py-3 bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-700 hover:to-purple-700 text-white font-bold rounded-lg transition"
+                  >
+                    {editingItem ? 'Atualizar' : 'Criar'} Programa
+                  </LoadingButton>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+
+        <DeleteConfirmModal
+          isOpen={deleteConfirm.isOpen}
+          onClose={() => setDeleteConfirm({ isOpen: false, id: null })}
+          onConfirm={confirmDelete}
+          title="Deletar Programa"
+          message="Tem certeza que deseja deletar este programa? Esta ação não pode ser desfeita."
+        />
+      </div>
+    </DndContext>
   );
 }
-
