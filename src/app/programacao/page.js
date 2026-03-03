@@ -2,13 +2,61 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragOverlay, useDroppable } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import api from '@/lib/api';
 import StatusAlert from '@/components/StatusAlert';
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 import LoadingButton from '@/components/LoadingButton';
+
+// Componente de slot droppable
+function DroppableSlot({ id, horario, dia, programas, onEdit, onDelete }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `slot-${dia}-${horario}`,
+    data: {
+      type: 'slot',
+      horario,
+      dia,
+    },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`border border-gray-700 rounded-lg p-3 bg-black/20 hover:bg-black/40 transition min-h-[70px] ${
+        isOver ? 'bg-purple-500/30 border-purple-500' : ''
+      }`}
+    >
+      <div className="flex items-start space-x-4">
+        <div className="flex-shrink-0 w-20 text-gray-400 font-mono text-sm">
+          {horario}
+        </div>
+        <div className="flex-1 min-w-0">
+          {programas.length > 0 ? (
+            <SortableContext items={programas.map(p => p.id.toString())}>
+              <div className="space-y-2">
+                {programas.map((item) => (
+                  <SortableItem
+                    key={item.id}
+                    id={item.id.toString()}
+                    item={item}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          ) : (
+            <div className="text-gray-600 text-xs text-center py-4 opacity-50">
+              Arraste aqui
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Componente de item arrastável
 function SortableItem({ id, item, onEdit, onDelete }) {
@@ -179,30 +227,15 @@ export default function ProgramacaoPage() {
     const item = programacao.find(p => p.id === parseInt(active.id));
     if (!item) return;
 
-    // Verificar se arrastou para um slot de horário
-    // O over pode ser o elemento ou ter data.current
-    let slotElement = null;
-    let horarioSlot = null;
-
-    // Tenta pegar o elemento do DOM
-    if (typeof over.id === 'string' && over.id.startsWith('slot-horario-')) {
-      horarioSlot = over.id.replace('slot-horario-', '');
-      slotElement = document.getElementById(over.id);
-    } else if (over.data?.current?.slotHorario) {
-      horarioSlot = over.data.current.slotHorario;
-    } else {
-      // Tenta encontrar o elemento pai que é um slot
-      const element = document.elementFromPoint(event.activatorEvent?.clientX || 0, event.activatorEvent?.clientY || 0);
-      if (element) {
-        const slot = element.closest('[data-slot-horario]');
-        if (slot) {
-          horarioSlot = slot.dataset.slotHorario;
-          slotElement = slot;
-        }
+    // Verificar se arrastou para um slot
+    if (over.data?.current?.type === 'slot') {
+      const { horario: horarioSlot, dia: diaSlot } = over.data.current;
+      
+      if (!horarioSlot || !diaSlot) {
+        console.log('Dados do slot incompletos:', over.data.current);
+        return;
       }
-    }
 
-    if (horarioSlot && selectedDia) {
       // Se o programa já tinha horário, mantém a duração original
       let novoHorario;
       if (item.horario && item.horario.includes(' - ')) {
@@ -232,7 +265,7 @@ export default function ProgramacaoPage() {
       
       try {
         const response = await api.put(`/programacao/${item.id}`, {
-          diaSemana: selectedDia,
+          diaSemana: diaSlot,
           horario: novoHorario,
           programa: item.programa,
           apresentador: item.apresentador || '',
@@ -331,14 +364,14 @@ export default function ProgramacaoPage() {
     setShowModal(true);
   };
 
-  // Filtrar programas do dia selecionado
-  const programasDoDia = programacao.filter(p => p.diaSemana === selectedDia && p.horario);
+  // Separar programas agendados e não agendados
+  const programasAgendados = programacao.filter(p => p.diaSemana && p.diaSemana !== 'Não agendado' && p.horario);
   const programasNaoAgendados = programacao.filter(p => !p.diaSemana || p.diaSemana === 'Não agendado' || !p.horario);
 
-  // Função para encontrar programas em um horário específico
-  const getProgramasNoHorario = (horario) => {
-    return programasDoDia.filter(p => {
-      if (!p.horario) return false;
+  // Função para encontrar programas em um horário específico de um dia
+  const getProgramasNoHorario = (dia, horario) => {
+    return programasAgendados.filter(p => {
+      if (p.diaSemana !== dia || !p.horario) return false;
       const [hInicio] = p.horario.split(' - ')[0].split(':');
       const [hSlot] = horario.split(':');
       return hInicio === hSlot;
@@ -448,47 +481,22 @@ export default function ProgramacaoPage() {
               </div>
             )}
 
-            {/* Grade Horária Única */}
+            {/* Grade Horária do Dia Selecionado */}
             <div className="bg-black/40 backdrop-blur-lg rounded-xl p-4 border border-gray-700">
               <h2 className="text-lg font-bold text-white mb-4">Grade Horária - {selectedDia}</h2>
               <div className="space-y-2">
                 {horarios.map((horario) => {
-                  const slotId = `slot-horario-${horario}`;
-                  const programasNoHorario = getProgramasNoHorario(horario);
+                  const programasNoHorario = getProgramasNoHorario(selectedDia, horario);
                   return (
-                    <div
-                      key={slotId}
-                      id={slotId}
-                      data-slot-horario={horario}
-                      className="border border-gray-700 rounded-lg p-3 bg-black/20 hover:bg-black/40 transition min-h-[70px]"
-                    >
-                      <div className="flex items-start space-x-4">
-                        <div className="flex-shrink-0 w-20 text-gray-400 font-mono text-sm">
-                          {horario}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          {programasNoHorario.length > 0 ? (
-                            <SortableContext items={programasNoHorario.map(p => p.id.toString())}>
-                              <div className="space-y-2">
-                                {programasNoHorario.map((item) => (
-                                  <SortableItem
-                                    key={item.id}
-                                    id={item.id.toString()}
-                                    item={item}
-                                    onEdit={handleEdit}
-                                    onDelete={handleDelete}
-                                  />
-                                ))}
-                              </div>
-                            </SortableContext>
-                          ) : (
-                            <div className="text-gray-600 text-xs text-center py-4 opacity-50">
-                              Arraste um programa aqui
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                    <DroppableSlot
+                      key={`${selectedDia}-${horario}`}
+                      id={`slot-${selectedDia}-${horario}`}
+                      horario={horario}
+                      dia={selectedDia}
+                      programas={programasNoHorario}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                    />
                   );
                 })}
               </div>
