@@ -31,7 +31,7 @@ function SortableItem({ id, item, onEdit, onDelete }) {
     <div
       ref={setNodeRef}
       style={style}
-      className="bg-black/40 rounded-lg p-4 border border-purple-500/30 hover:border-purple-500/60 transition relative group"
+      className="bg-black/40 rounded-lg p-3 border border-purple-500/30 hover:border-purple-500/60 transition relative group mb-2"
     >
       {/* Handle de arrastar - só aparece no hover */}
       <div
@@ -40,7 +40,7 @@ function SortableItem({ id, item, onEdit, onDelete }) {
         className="absolute left-2 top-2 cursor-grab active:cursor-grabbing text-gray-500 hover:text-white transition opacity-0 group-hover:opacity-100"
         onClick={(e) => e.stopPropagation()}
       >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
         </svg>
       </div>
@@ -52,7 +52,7 @@ function SortableItem({ id, item, onEdit, onDelete }) {
             <h3 className="text-sm font-bold text-white truncate">{item.programa}</h3>
           </div>
           {item.apresentador && (
-            <p className="text-purple-300 text-[10px] mb-0.5 truncate">Apresentador: {item.apresentador}</p>
+            <p className="text-purple-300 text-[10px] mb-0.5 truncate">{item.apresentador}</p>
           )}
           {item.descricao && (
             <p className="text-gray-400 text-[10px] line-clamp-1">{item.descricao}</p>
@@ -96,6 +96,7 @@ export default function ProgramacaoPage() {
   const [saving, setSaving] = useState(false);
   const [viewMode, setViewMode] = useState('grade');
   const [activeId, setActiveId] = useState(null);
+  const [selectedDia, setSelectedDia] = useState('Segunda-feira');
   const [formData, setFormData] = useState({
     diaSemana: '',
     horario: '',
@@ -114,23 +115,17 @@ export default function ProgramacaoPage() {
     'Domingo'
   ];
 
-  // Horários otimizados: períodos de 2h (mais compacto)
+  // Horários otimizados: períodos de 1h
   const horarios = [
-    { inicio: '06:00', fim: '08:00', label: '06:00-08:00' },
-    { inicio: '08:00', fim: '10:00', label: '08:00-10:00' },
-    { inicio: '10:00', fim: '12:00', label: '10:00-12:00' },
-    { inicio: '12:00', fim: '14:00', label: '12:00-14:00' },
-    { inicio: '14:00', fim: '16:00', label: '14:00-16:00' },
-    { inicio: '16:00', fim: '18:00', label: '16:00-18:00' },
-    { inicio: '18:00', fim: '20:00', label: '18:00-20:00' },
-    { inicio: '20:00', fim: '22:00', label: '20:00-22:00' },
-    { inicio: '22:00', fim: '00:00', label: '22:00-00:00' }
+    '06:00', '07:00', '08:00', '09:00', '10:00', '11:00',
+    '12:00', '13:00', '14:00', '15:00', '16:00', '17:00',
+    '18:00', '19:00', '20:00', '21:00', '22:00', '23:00'
   ];
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8, // Precisa arrastar pelo menos 8px para ativar
+        distance: 8,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -173,58 +168,53 @@ export default function ProgramacaoPage() {
     setActiveId(null);
 
     if (!over) {
-      console.log('Drag cancelado: over é null');
+      return;
+    }
+
+    // Se arrastou para o mesmo lugar, não faz nada
+    if (active.id === over.id) {
       return;
     }
 
     const item = programacao.find(p => p.id === parseInt(active.id));
-    if (!item) {
-      console.log('Item não encontrado:', active.id);
-      return;
+    if (!item) return;
+
+    // Verificar se arrastou para um slot de horário
+    // O over pode ser o elemento ou ter data.current
+    let slotElement = null;
+    let horarioSlot = null;
+
+    // Tenta pegar o elemento do DOM
+    if (typeof over.id === 'string' && over.id.startsWith('slot-horario-')) {
+      horarioSlot = over.id.replace('slot-horario-', '');
+      slotElement = document.getElementById(over.id);
+    } else if (over.data?.current?.slotHorario) {
+      horarioSlot = over.data.current.slotHorario;
+    } else {
+      // Tenta encontrar o elemento pai que é um slot
+      const element = document.elementFromPoint(event.activatorEvent?.clientX || 0, event.activatorEvent?.clientY || 0);
+      if (element) {
+        const slot = element.closest('[data-slot-horario]');
+        if (slot) {
+          horarioSlot = slot.dataset.slotHorario;
+          slotElement = slot;
+        }
+      }
     }
 
-    console.log('Drag end:', { activeId: active.id, overId: over.id, item });
-
-    // Se arrastou para um slot da grade
-    if (over.id && typeof over.id === 'string' && over.id.startsWith('slot-')) {
-      // Buscar o elemento para pegar os data attributes
-      const slotElement = document.getElementById(over.id);
-      if (!slotElement) {
-        console.log('Slot element não encontrado:', over.id);
-        return;
-      }
-
-      const dia = slotElement.dataset.dia;
-      const periodoLabel = slotElement.dataset.periodo;
-      
-      console.log('Dados do slot:', { dia, periodoLabel, slotId: over.id });
-      
-      if (!dia || !periodoLabel) {
-        console.log('Dia ou período não encontrado no dataset');
-        return;
-      }
-      
-      const periodo = horarios.find(h => h.label === periodoLabel);
-      if (!periodo) {
-        console.log('Período não encontrado:', periodoLabel);
-        return;
-      }
-      
-      // Se o programa já tinha horário, mantém a duração original, só muda o início
+    if (horarioSlot && selectedDia) {
+      // Se o programa já tinha horário, mantém a duração original
       let novoHorario;
       if (item.horario && item.horario.includes(' - ')) {
         const [hInicio, hFim] = item.horario.split(' - ');
         const [hInicioNum, mInicioNum] = hInicio.split(':').map(Number);
         const [hFimNum, mFimNum] = hFim.split(':').map(Number);
         
-        // Calcula a duração em minutos
         const inicioMinutos = hInicioNum * 60 + mInicioNum;
         const fimMinutos = hFimNum * 60 + mFimNum;
         const duracaoMinutos = fimMinutos - inicioMinutos;
         
-        // Novo horário mantém a duração, mas começa no início do período
-        const novoInicio = periodo.inicio;
-        const [novoHInicio, novoMInicio] = novoInicio.split(':').map(Number);
+        const [novoHInicio, novoMInicio] = horarioSlot.split(':').map(Number);
         const novoInicioMinutos = novoHInicio * 60 + novoMInicio;
         const novoFimMinutos = novoInicioMinutos + duracaoMinutos;
         
@@ -232,38 +222,31 @@ export default function ProgramacaoPage() {
         const novoMFim = novoFimMinutos % 60;
         const novoFim = `${String(novoHFim).padStart(2, '0')}:${String(novoMFim).padStart(2, '0')}`;
         
-        novoHorario = `${novoInicio} - ${novoFim}`;
+        novoHorario = `${horarioSlot} - ${novoFim}`;
       } else {
-        // Se não tinha horário, usa o período completo
-        novoHorario = `${periodo.inicio} - ${periodo.fim}`;
+        // Se não tinha horário, cria de 1h
+        const [hInicio] = horarioSlot.split(':').map(Number);
+        const hFim = hInicio + 1;
+        novoHorario = `${horarioSlot} - ${String(hFim).padStart(2, '0')}:00`;
       }
-      
-      console.log('Salvando programa:', { id: item.id, dia, novoHorario });
       
       try {
         const response = await api.put(`/programacao/${item.id}`, {
-          diaSemana: dia,
+          diaSemana: selectedDia,
           horario: novoHorario,
           programa: item.programa,
           apresentador: item.apresentador || '',
           descricao: item.descricao || '',
         });
         
-        console.log('Resposta do backend:', response.data);
-        
         if (response.data.success) {
           setStatus({ type: 'success', message: 'Programa movido com sucesso.' });
           await loadProgramacao();
-        } else {
-          setStatus({ type: 'error', message: 'Erro ao mover programa.' });
         }
       } catch (error) {
         console.error('Erro ao mover programa:', error);
-        console.error('Detalhes do erro:', error.response?.data);
         setStatus({ type: 'error', message: error.response?.data?.error || 'Erro ao mover programa.' });
       }
-    } else {
-      console.log('Não é um slot válido:', over.id);
     }
   };
 
@@ -348,29 +331,17 @@ export default function ProgramacaoPage() {
     setShowModal(true);
   };
 
-  // Separar programas agendados e não agendados
-  const programasAgendados = programacao.filter(p => p.diaSemana && p.diaSemana !== 'Não agendado' && p.horario);
+  // Filtrar programas do dia selecionado
+  const programasDoDia = programacao.filter(p => p.diaSemana === selectedDia && p.horario);
   const programasNaoAgendados = programacao.filter(p => !p.diaSemana || p.diaSemana === 'Não agendado' || !p.horario);
 
-  // Função para encontrar programas em um slot específico
-  const getProgramasNoSlot = (dia, periodo) => {
-    return programasAgendados.filter(p => {
-      if (p.diaSemana !== dia || !p.horario) return false;
-      
-      // Extrai o horário de início do programa
-      const horarioPrograma = p.horario.split(' - ')[0];
-      const [hProg, mProg] = horarioPrograma.split(':').map(Number);
-      const [hInicio] = periodo.inicio.split(':').map(Number);
-      const [hFim] = periodo.fim.split(':').map(Number);
-      
-      // Verifica se o programa começa dentro do período
-      // Se o período termina em 00:00, considera como 24:00
-      const fimPeriodo = hFim === 0 ? 24 : hFim;
-      const inicioMinutos = hProg * 60 + mProg;
-      const inicioPeriodoMinutos = hInicio * 60;
-      const fimPeriodoMinutos = fimPeriodo * 60;
-      
-      return inicioMinutos >= inicioPeriodoMinutos && inicioMinutos < fimPeriodoMinutos;
+  // Função para encontrar programas em um horário específico
+  const getProgramasNoHorario = (horario) => {
+    return programasDoDia.filter(p => {
+      if (!p.horario) return false;
+      const [hInicio] = p.horario.split(' - ')[0].split(':');
+      const [hSlot] = horario.split(':');
+      return hInicio === hSlot;
     });
   };
 
@@ -440,6 +411,22 @@ export default function ProgramacaoPage() {
 
         {viewMode === 'grade' ? (
           <>
+            {/* Seletor de Dia */}
+            <div className="mb-6 bg-black/40 backdrop-blur-lg rounded-xl p-4 border border-gray-700">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Selecione o dia da semana:
+              </label>
+              <select
+                value={selectedDia}
+                onChange={(e) => setSelectedDia(e.target.value)}
+                className="px-4 py-2 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition"
+              >
+                {diasSemana.map((dia) => (
+                  <option key={dia} value={dia}>{dia}</option>
+                ))}
+              </select>
+            </div>
+
             {/* Lista de Programas Não Agendados */}
             {programasNaoAgendados.length > 0 && (
               <div className="mb-8 bg-black/40 backdrop-blur-lg rounded-xl p-6 border border-gray-700">
@@ -461,64 +448,49 @@ export default function ProgramacaoPage() {
               </div>
             )}
 
-            {/* Grade Horária Otimizada */}
-            <div className="bg-black/40 backdrop-blur-lg rounded-xl p-4 border border-gray-700 overflow-x-auto">
-              <h2 className="text-lg font-bold text-white mb-3">Grade Horária Semanal</h2>
-              <div className="min-w-full">
-                <table className="w-full border-collapse text-xs">
-                  <thead>
-                    <tr>
-                      <th className="border border-gray-700 p-1.5 text-left text-gray-300 sticky left-0 bg-black/60 z-10 min-w-[90px] text-xs">Horário</th>
-                      {diasSemana.map((dia) => (
-                        <th key={dia} className="border border-gray-700 p-1.5 text-center text-gray-300 min-w-[140px] bg-black/40 text-xs">
-                          {dia.split('-')[0]}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {horarios.map((periodo) => (
-                      <tr key={periodo.label}>
-                        <td className="border border-gray-700 p-1.5 text-gray-400 font-mono text-xs sticky left-0 bg-black/60 z-10">
-                          {periodo.label}
-                        </td>
-                        {diasSemana.map((dia) => {
-                          const slotId = `slot-${dia}-${periodo.label}`;
-                          const programasNoSlot = getProgramasNoSlot(dia, periodo);
-                          return (
-                            <td
-                              key={slotId}
-                              id={slotId}
-                              data-dia={dia}
-                              data-periodo={periodo.label}
-                              className="border border-gray-700 p-1.5 min-h-[60px] bg-black/20 hover:bg-black/40 transition align-top"
-                            >
-                              {programasNoSlot.length > 0 ? (
-                                <SortableContext items={programasNoSlot.map(p => p.id.toString())}>
-                                  <div className="space-y-1">
-                                    {programasNoSlot.map((item) => (
-                                      <SortableItem
-                                        key={item.id}
-                                        id={item.id.toString()}
-                                        item={item}
-                                        onEdit={handleEdit}
-                                        onDelete={handleDelete}
-                                      />
-                                    ))}
-                                  </div>
-                                </SortableContext>
-                              ) : (
-                                <div className="text-gray-600 text-[10px] text-center py-2 opacity-50">
-                                  Arraste
-                                </div>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* Grade Horária Única */}
+            <div className="bg-black/40 backdrop-blur-lg rounded-xl p-4 border border-gray-700">
+              <h2 className="text-lg font-bold text-white mb-4">Grade Horária - {selectedDia}</h2>
+              <div className="space-y-2">
+                {horarios.map((horario) => {
+                  const slotId = `slot-horario-${horario}`;
+                  const programasNoHorario = getProgramasNoHorario(horario);
+                  return (
+                    <div
+                      key={slotId}
+                      id={slotId}
+                      data-slot-horario={horario}
+                      className="border border-gray-700 rounded-lg p-3 bg-black/20 hover:bg-black/40 transition min-h-[70px]"
+                    >
+                      <div className="flex items-start space-x-4">
+                        <div className="flex-shrink-0 w-20 text-gray-400 font-mono text-sm">
+                          {horario}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {programasNoHorario.length > 0 ? (
+                            <SortableContext items={programasNoHorario.map(p => p.id.toString())}>
+                              <div className="space-y-2">
+                                {programasNoHorario.map((item) => (
+                                  <SortableItem
+                                    key={item.id}
+                                    id={item.id.toString()}
+                                    item={item}
+                                    onEdit={handleEdit}
+                                    onDelete={handleDelete}
+                                  />
+                                ))}
+                              </div>
+                            </SortableContext>
+                          ) : (
+                            <div className="text-gray-600 text-xs text-center py-4 opacity-50">
+                              Arraste um programa aqui
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </>
@@ -526,7 +498,7 @@ export default function ProgramacaoPage() {
           /* Vista de Lista */
           <div className="space-y-6">
             {diasSemana.map((dia) => {
-              const itemsDoDia = programasAgendados.filter(p => p.diaSemana === dia);
+              const itemsDoDia = programacao.filter(p => p.diaSemana === dia && p.horario);
               if (itemsDoDia.length === 0) return null;
 
               return (
