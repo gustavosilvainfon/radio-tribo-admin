@@ -24,33 +24,35 @@ function DroppableSlot({ id, horario, dia, programas, onEdit, onDelete }) {
   return (
     <div
       ref={setNodeRef}
-      className={`border border-gray-700 rounded p-2 bg-black/20 hover:bg-black/40 transition min-h-[80px] ${
+      className={`border border-gray-700 rounded-lg p-3 bg-black/20 hover:bg-black/40 transition min-h-[70px] ${
         isOver ? 'bg-purple-500/30 border-purple-500' : ''
       }`}
     >
-      <div className="text-gray-400 font-mono text-[10px] mb-1 text-center">
-        {horario}
-      </div>
-      <div className="min-h-[60px]">
-        {programas.length > 0 ? (
-          <SortableContext items={programas.map(p => p.id.toString())}>
-            <div className="space-y-1">
-              {programas.map((item) => (
-                <SortableItem
-                  key={item.id}
-                  id={item.id.toString()}
-                  item={item}
-                  onEdit={onEdit}
-                  onDelete={onDelete}
-                />
-              ))}
+      <div className="flex items-start space-x-4">
+        <div className="flex-shrink-0 w-20 text-gray-400 font-mono text-sm">
+          {horario}
+        </div>
+        <div className="flex-1 min-w-0">
+          {programas.length > 0 ? (
+            <SortableContext items={programas.map(p => p.id.toString())}>
+              <div className="space-y-2">
+                {programas.map((item) => (
+                  <SortableItem
+                    key={item.id}
+                    id={item.id.toString()}
+                    item={item}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          ) : (
+            <div className="text-gray-600 text-xs text-center py-4 opacity-50">
+              Arraste aqui
             </div>
-          </SortableContext>
-        ) : (
-          <div className="text-gray-600 text-[9px] text-center py-2 opacity-50">
-            Arraste
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
@@ -91,24 +93,26 @@ function SortableItem({ id, item, onEdit, onDelete }) {
         </svg>
       </div>
       
-      <div className="flex flex-col pl-5">
+      <div className="flex justify-between items-start pl-6">
         <div className="flex-1 min-w-0">
-          <h3 className="text-[10px] font-bold text-white truncate mb-0.5" title={item.programa}>
-            {item.programa}
-          </h3>
+          <div className="flex items-center space-x-2 mb-1">
+            {item.horario && <span className="text-red-400 font-bold text-[10px] whitespace-nowrap">{item.horario}</span>}
+            <h3 className="text-sm font-bold text-white truncate">{item.programa}</h3>
+          </div>
           {item.apresentador && (
-            <p className="text-purple-300 text-[8px] truncate" title={item.apresentador}>
-              {item.apresentador}
-            </p>
+            <p className="text-purple-300 text-[10px] mb-0.5 truncate">{item.apresentador}</p>
+          )}
+          {item.descricao && (
+            <p className="text-gray-400 text-[10px] line-clamp-1">{item.descricao}</p>
           )}
         </div>
-        <div className="flex items-center justify-end space-x-1 mt-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center space-x-1 ml-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={(e) => {
               e.stopPropagation();
               onEdit(item);
             }}
-            className="px-1 py-0.5 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 text-blue-300 rounded transition text-[8px]"
+            className="px-2 py-1 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 text-blue-300 rounded transition text-[10px]"
             title="Editar"
           >
             ✏️
@@ -118,7 +122,7 @@ function SortableItem({ id, item, onEdit, onDelete }) {
               e.stopPropagation();
               onDelete(item.id);
             }}
-            className="px-1 py-0.5 bg-red-600/30 hover:bg-red-600/50 border border-red-500/50 text-red-300 rounded transition text-[8px]"
+            className="px-2 py-1 bg-red-600/30 hover:bg-red-600/50 border border-red-500/50 text-red-300 rounded transition text-[10px]"
             title="Deletar"
           >
             🗑️
@@ -159,18 +163,11 @@ export default function ProgramacaoPage() {
     'Domingo'
   ];
 
-  // Gerar horários de 20 em 20 minutos (24h)
-  const gerarHorarios = () => {
-    const horarios = [];
-    for (let h = 0; h < 24; h++) {
-      for (let m = 0; m < 60; m += 20) {
-        horarios.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-      }
-    }
-    return horarios;
-  };
-  
-  const horarios = gerarHorarios();
+  // Horários de 1 em 1 hora (24h)
+  const horarios = [];
+  for (let h = 0; h < 24; h++) {
+    horarios.push(`${String(h).padStart(2, '0')}:00`);
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -249,8 +246,8 @@ export default function ProgramacaoPage() {
         const fimMinutos = hFimNum * 60 + mFimNum;
         const duracaoMinutos = fimMinutos - inicioMinutos;
         
-        const [novoHInicio, novoMInicio] = horarioSlot.split(':').map(Number);
-        const novoInicioMinutos = novoHInicio * 60 + novoMInicio;
+        const [novoHInicio] = horarioSlot.split(':').map(Number);
+        const novoInicioMinutos = novoHInicio * 60;
         const novoFimMinutos = novoInicioMinutos + duracaoMinutos;
         
         const novoHFim = Math.floor(novoFimMinutos / 60) % 24; // Wrap around 24h
@@ -259,12 +256,10 @@ export default function ProgramacaoPage() {
         
         novoHorario = `${horarioSlot} - ${novoFim}`;
       } else {
-        // Se não tinha horário, cria de 1h (padrão)
-        const [hInicio, mInicio] = horarioSlot.split(':').map(Number);
-        const fimMinutos = (hInicio * 60 + mInicio) + 60;
-        const hFim = Math.floor(fimMinutos / 60) % 24;
-        const mFim = fimMinutos % 60;
-        novoHorario = `${horarioSlot} - ${String(hFim).padStart(2, '0')}:${String(mFim).padStart(2, '0')}`;
+        // Se não tinha horário, cria de 1h
+        const [hInicio] = horarioSlot.split(':').map(Number);
+        const hFim = (hInicio + 1) % 24;
+        novoHorario = `${horarioSlot} - ${String(hFim).padStart(2, '0')}:00`;
       }
       
       try {
@@ -376,18 +371,9 @@ export default function ProgramacaoPage() {
   const getProgramasNoHorario = (dia, horario) => {
     return programasAgendados.filter(p => {
       if (p.diaSemana !== dia || !p.horario) return false;
-      
-      // Extrai o horário de início do programa
-      const horarioInicio = p.horario.split(' - ')[0];
-      const [hProg, mProg] = horarioInicio.split(':').map(Number);
-      const [hSlot, mSlot] = horario.split(':').map(Number);
-      
-      // Converte para minutos para comparação precisa
-      const minutosProg = hProg * 60 + mProg;
-      const minutosSlot = hSlot * 60 + mSlot;
-      
-      // Verifica se o programa começa neste horário (com tolerância de 20min)
-      return minutosProg >= minutosSlot && minutosProg < minutosSlot + 20;
+      const [hInicio] = p.horario.split(' - ')[0].split(':');
+      const [hSlot] = horario.split(':');
+      return hInicio === hSlot;
     });
   };
 
@@ -494,26 +480,24 @@ export default function ProgramacaoPage() {
               </div>
             )}
 
-            {/* Grade Horária do Dia Selecionado - Layout 6 colunas x 12 linhas */}
+            {/* Grade Horária do Dia Selecionado */}
             <div className="bg-black/40 backdrop-blur-lg rounded-xl p-4 border border-gray-700">
-              <h2 className="text-lg font-bold text-white mb-4">Grade Horária 24h (20 em 20 min) - {selectedDia}</h2>
-              <div className="overflow-x-auto">
-                <div className="grid grid-cols-6 gap-2 min-w-max">
-                  {horarios.map((horario) => {
-                    const programasNoHorario = getProgramasNoHorario(selectedDia, horario);
-                    return (
-                      <DroppableSlot
-                        key={`${selectedDia}-${horario}`}
-                        id={`slot-${selectedDia}-${horario}`}
-                        horario={horario}
-                        dia={selectedDia}
-                        programas={programasNoHorario}
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                      />
-                    );
-                  })}
-                </div>
+              <h2 className="text-lg font-bold text-white mb-4">Grade Horária 24h - {selectedDia}</h2>
+              <div className="space-y-2">
+                {horarios.map((horario) => {
+                  const programasNoHorario = getProgramasNoHorario(selectedDia, horario);
+                  return (
+                    <DroppableSlot
+                      key={`${selectedDia}-${horario}`}
+                      id={`slot-${selectedDia}-${horario}`}
+                      horario={horario}
+                      dia={selectedDia}
+                      programas={programasNoHorario}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                    />
+                  );
+                })}
               </div>
             </div>
           </>
