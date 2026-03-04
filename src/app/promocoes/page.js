@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import StatusAlert from '@/components/StatusAlert';
+import DeleteConfirmModal from '@/components/DeleteConfirmModal';
+import LoadingButton from '@/components/LoadingButton';
 
 export default function PromocoesPage() {
   const router = useRouter();
@@ -12,6 +14,8 @@ export default function PromocoesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingPromocao, setEditingPromocao] = useState(null);
   const [status, setStatus] = useState({ type: null, message: '' });
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null });
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     titulo: '',
     descricao: '',
@@ -55,6 +59,7 @@ export default function PromocoesPage() {
       return;
     }
 
+    setSaving(true);
     try {
       if (editingPromocao) {
         await api.put(`/promocoes/${editingPromocao.id}`, formData);
@@ -73,10 +78,15 @@ export default function PromocoesPage() {
         ativo: true,
         imagem: '',
       });
-      loadPromocoes();
+      // Aguardar um pouco antes de recarregar para evitar rate limit
+      setTimeout(() => {
+        loadPromocoes();
+      }, 300);
     } catch (error) {
       console.error('Erro ao salvar promoção:', error);
       setStatus({ type: 'error', message: 'Erro ao salvar promoção.' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -93,22 +103,40 @@ export default function PromocoesPage() {
     setShowModal(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Tem certeza que deseja deletar esta promoção?')) return;
-    
+  const handleDelete = (id) => {
+    setDeleteConfirm({ isOpen: true, id });
+  };
+
+  const confirmDelete = async () => {
     try {
-      await api.delete(`/promocoes/${id}`);
-      loadPromocoes();
+      await api.delete(`/promocoes/${deleteConfirm.id}`);
+      setStatus({ type: 'success', message: 'Promoção deletada com sucesso.' });
+      // Aguardar um pouco antes de recarregar para evitar rate limit
+      setTimeout(() => {
+        loadPromocoes();
+      }, 300);
     } catch (error) {
       console.error('Erro ao deletar promoção:', error);
       setStatus({ type: 'error', message: 'Erro ao deletar promoção.' });
+    } finally {
+      setDeleteConfirm({ isOpen: false, id: null });
     }
   };
 
   const toggleAtivo = async (id, ativo) => {
     try {
-      await api.put(`/promocoes/${id}`, { ativo: !ativo });
-      loadPromocoes();
+      const promocao = promocoes.find(p => p.id === id);
+      if (!promocao) return;
+      
+      await api.put(`/promocoes/${id}`, { 
+        ...promocao,
+        ativo: !ativo 
+      });
+      setStatus({ type: 'success', message: `Promoção ${!ativo ? 'ativada' : 'desativada'} com sucesso.` });
+      // Aguardar um pouco antes de recarregar para evitar rate limit
+      setTimeout(() => {
+        loadPromocoes();
+      }, 300);
     } catch (error) {
       console.error('Erro ao alterar status da promoção:', error);
       setStatus({ type: 'error', message: 'Erro ao alterar status da promoção.' });
@@ -325,17 +353,26 @@ export default function PromocoesPage() {
                 >
                   Cancelar
                 </button>
-                <button
+                <LoadingButton
                   type="submit"
+                  loading={saving}
                   className="px-6 py-3 bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-700 hover:to-purple-700 text-white font-bold rounded-lg transition"
                 >
                   {editingPromocao ? 'Atualizar' : 'Criar'} Promoção
-                </button>
+                </LoadingButton>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      <DeleteConfirmModal
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, id: null })}
+        onConfirm={confirmDelete}
+        title="Deletar Promoção"
+        message="Tem certeza que deseja deletar esta promoção? Esta ação não pode ser desfeita."
+      />
     </div>
   );
 }
