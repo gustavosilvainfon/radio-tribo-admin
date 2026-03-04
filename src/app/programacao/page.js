@@ -204,6 +204,16 @@ export default function ProgramacaoPage() {
     checkAuth();
     loadProgramacao();
     
+    // Carregar programação copiada do localStorage se existir
+    const copiada = localStorage.getItem('programacaoCopiada');
+    if (copiada) {
+      try {
+        setProgramacaoCopiada(JSON.parse(copiada));
+      } catch (error) {
+        console.error('Erro ao carregar programação copiada:', error);
+      }
+    }
+    
     // Cleanup: cancelar timeout ao desmontar
     return () => {
       if (loadingTimeout) {
