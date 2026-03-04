@@ -58,6 +58,7 @@ function DroppableSlot({ id, horario, dia, programas, onEdit, onDelete }) {
 
 // Componente de item arrastável
 function SortableItem({ id, item, onEdit, onDelete }) {
+  const itemId = typeof id === 'string' ? id : id.toString();
   const {
     attributes,
     listeners,
@@ -65,7 +66,7 @@ function SortableItem({ id, item, onEdit, onDelete }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id });
+  } = useSortable({ id: itemId });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -208,7 +209,9 @@ export default function ProgramacaoPage() {
   };
 
   const handleDragStart = (event) => {
-    setActiveId(event.active.id);
+    const activeId = typeof event.active.id === 'string' ? parseInt(event.active.id) : event.active.id;
+    setActiveId(activeId);
+    console.log('Drag start - ID:', activeId, 'Item:', programacao.find(p => p.id === activeId));
   };
 
   const handleDragEnd = async (event) => {
@@ -224,8 +227,14 @@ export default function ProgramacaoPage() {
       return;
     }
 
-    const item = programacao.find(p => p.id === parseInt(active.id));
-    if (!item) return;
+    // Garantir que estamos pegando o item correto pelo ID do active
+    const activeId = typeof active.id === 'string' ? parseInt(active.id) : active.id;
+    const item = programacao.find(p => p.id === activeId);
+    
+    if (!item) {
+      console.log('Item não encontrado:', activeId, 'Programação:', programacao.map(p => p.id));
+      return;
+    }
 
     // Verificar se arrastou para um slot
     if (over.data?.current?.type === 'slot') {
@@ -368,13 +377,27 @@ export default function ProgramacaoPage() {
   const programasAgendados = programacao.filter(p => p.diaSemana && p.diaSemana !== 'Não agendado' && p.horario);
   const programasNaoAgendados = programacao.filter(p => !p.diaSemana || p.diaSemana === 'Não agendado' || !p.horario);
 
-  // Função para encontrar programas em um horário específico de um dia
+  // Função para encontrar programas que estão ativos em um horário específico de um dia
   const getProgramasNoHorario = (dia, horario) => {
     return programasAgendados.filter(p => {
       if (p.diaSemana !== dia || !p.horario) return false;
-      const [hInicio] = p.horario.split(' - ')[0].split(':');
-      const [hSlot] = horario.split(':');
-      return hInicio === hSlot;
+      
+      // Extrai horário de início e fim do programa
+      const [hInicioStr, hFimStr] = p.horario.split(' - ');
+      if (!hInicioStr || !hFimStr) return false;
+      
+      const [hInicio, mInicio] = hInicioStr.split(':').map(Number);
+      const [hFim, mFim] = hFimStr.split(':').map(Number);
+      const [hSlot, mSlot] = horario.split(':').map(Number);
+      
+      // Converte tudo para minutos
+      const inicioMinutos = hInicio * 60 + mInicio;
+      const fimMinutos = hFim * 60 + mFim;
+      const slotMinutos = hSlot * 60 + mSlot;
+      
+      // Verifica se o slot está dentro do intervalo do programa
+      // O programa ocupa o slot se o slot está entre o início (inclusive) e o fim (exclusive)
+      return slotMinutos >= inicioMinutos && slotMinutos < fimMinutos;
     });
   };
 
@@ -389,7 +412,10 @@ export default function ProgramacaoPage() {
     );
   }
 
-  const activeItem = activeId ? programacao.find(p => p.id === parseInt(activeId)) : null;
+  const activeItem = activeId ? programacao.find(p => {
+    const id = typeof activeId === 'string' ? parseInt(activeId) : activeId;
+    return p.id === id;
+  }) : null;
 
   return (
     <DndContext 
