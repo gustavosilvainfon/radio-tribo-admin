@@ -233,7 +233,7 @@ export default function ProgramacaoPage() {
     
     console.log('🔵 Drag START - Active ID original:', activeIdString);
     
-    // Se tem prefixo (ex: "nao-agendado-123" ou "grade-Segunda-feira-06:00-123"), pegar o último número
+    // Se tem prefixo (ex: "nao-agendado-123", "grade-Segunda-feira-06:00-123", ou "item-123"), pegar o último número
     let activeId;
     if (activeIdString.includes('-')) {
       const parts = activeIdString.split('-');
