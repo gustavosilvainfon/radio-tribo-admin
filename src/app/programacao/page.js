@@ -202,6 +202,13 @@ export default function ProgramacaoPage() {
   useEffect(() => {
     checkAuth();
     loadProgramacao();
+    
+    // Cleanup: cancelar timeout ao desmontar
+    return () => {
+      if (loadingTimeout) {
+        clearTimeout(loadingTimeout);
+      }
+    };
   }, []);
 
   const checkAuth = () => {
