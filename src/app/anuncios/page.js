@@ -91,7 +91,8 @@ export default function AnunciosPage() {
     setUploading(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://api.gsolucoes.app.br'}/api/anuncios/upload`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.gsolucoes.app.br';
+      const response = await fetch(`${apiUrl}/api/anuncios/upload`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -102,12 +103,8 @@ export default function AnunciosPage() {
       const data = await response.json();
       
       if (data.success) {
-        // Construir URL completa da imagem
-        const imageUrl = data.imageUrl.startsWith('http') 
-          ? data.imageUrl 
-          : `${process.env.NEXT_PUBLIC_API_URL || 'https://api.gsolucoes.app.br'}${data.imageUrl}`;
-        
-        return imageUrl;
+        // A URL já vem completa do backend
+        return data.imageUrl;
       } else {
         throw new Error(data.error || 'Erro ao fazer upload');
       }
