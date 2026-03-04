@@ -11,7 +11,7 @@ import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 import LoadingButton from '@/components/LoadingButton';
 
 // Componente de slot droppable
-function DroppableSlot({ id, horario, dia, programas, onEdit, onDelete }) {
+function DroppableSlot({ id, horario, dia, programas, onEdit, onDelete, onDuplicate }) {
   const { setNodeRef, isOver } = useDroppable({
     id: `slot-${dia}-${horario}`,
     data: {
@@ -33,15 +33,17 @@ function DroppableSlot({ id, horario, dia, programas, onEdit, onDelete }) {
       </div>
       <div className="min-h-[90px]">
         {programas.length > 0 ? (
-          <SortableContext items={programas.map(p => p.id.toString())}>
+          <SortableContext items={programas.map(p => `grade-${dia}-${horario}-${p.id}`)}>
             <div className="space-y-1.5">
               {programas.map((item) => (
                 <SortableItem
                   key={item.id}
                   id={item.id.toString()}
                   item={item}
+                  prefix={`grade-${dia}-${horario}`}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  onDuplicate={onDuplicate}
                 />
               ))}
             </div>
@@ -57,8 +59,9 @@ function DroppableSlot({ id, horario, dia, programas, onEdit, onDelete }) {
 }
 
 // Componente de item arrastável
-function SortableItem({ id, item, onEdit, onDelete }) {
-  const itemId = typeof id === 'string' ? id : id.toString();
+function SortableItem({ id, item, onEdit, onDelete, onDuplicate, prefix = '' }) {
+  // Usar prefixo para evitar conflitos de ID entre diferentes listas
+  const itemId = prefix ? `${prefix}-${id}` : id.toString();
   const {
     attributes,
     listeners,
@@ -119,6 +122,18 @@ function SortableItem({ id, item, onEdit, onDelete }) {
           >
             ✏️
           </button>
+          {onDuplicate && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDuplicate(item);
+              }}
+              className="px-1.5 py-0.5 bg-green-600/30 hover:bg-green-600/50 border border-green-500/50 text-green-300 rounded transition text-[9px]"
+              title="Duplicar"
+            >
+              📋
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -209,9 +224,21 @@ export default function ProgramacaoPage() {
   };
 
   const handleDragStart = (event) => {
-    const activeId = typeof event.active.id === 'string' ? parseInt(event.active.id) : event.active.id;
+    // Extrair o ID real do item (remover prefixo se houver)
+    let activeId = typeof event.active.id === 'string' ? event.active.id : event.active.id.toString();
+    
+    // Se tem prefixo (ex: "nao-agendado-123"), remover para pegar só o ID
+    if (activeId.includes('-')) {
+      const parts = activeId.split('-');
+      activeId = parseInt(parts[parts.length - 1]);
+    } else {
+      activeId = parseInt(activeId);
+    }
+    
     setActiveId(activeId);
-    console.log('Drag start - ID:', activeId, 'Item:', programacao.find(p => p.id === activeId));
+    // Encontrar o item correto
+    const item = programacao.find(p => p.id === activeId);
+    console.log('Drag start - ID:', activeId, 'Active ID original:', event.active.id, 'Item encontrado:', item);
   };
 
   const handleDragEnd = async (event) => {
@@ -227,14 +254,26 @@ export default function ProgramacaoPage() {
       return;
     }
 
-    // Garantir que estamos pegando o item correto pelo ID do active
-    const activeId = typeof active.id === 'string' ? parseInt(active.id) : active.id;
+    // Extrair o ID real do item (remover prefixo se houver)
+    let activeId = typeof active.id === 'string' ? active.id : active.id.toString();
+    
+    // Se tem prefixo (ex: "nao-agendado-123" ou "grade-Segunda-feira-06:00-123"), pegar o último número
+    if (activeId.includes('-')) {
+      const parts = activeId.split('-');
+      // Pegar o último elemento que deve ser o ID numérico
+      activeId = parseInt(parts[parts.length - 1]);
+    } else {
+      activeId = parseInt(activeId);
+    }
+    
     const item = programacao.find(p => p.id === activeId);
     
     if (!item) {
-      console.log('Item não encontrado:', activeId, 'Programação:', programacao.map(p => p.id));
+      console.log('Item não encontrado:', activeId, 'Active ID original:', active.id, 'Programação:', programacao.map(p => ({ id: p.id, programa: p.programa })));
       return;
     }
+    
+    console.log('Movendo item:', item.programa, 'ID:', item.id, 'Para slot:', over.data?.current);
 
     // Verificar se arrastou para um slot
     if (over.data?.current?.type === 'slot') {
@@ -358,6 +397,27 @@ export default function ProgramacaoPage() {
       setStatus({ type: 'error', message: 'Erro ao deletar programação.' });
     } finally {
       setDeleteConfirm({ isOpen: false, id: null });
+    }
+  };
+
+  const handleDuplicate = async (item) => {
+    try {
+      setSaving(true);
+      const novoPrograma = {
+        diaSemana: item.diaSemana || '',
+        horario: item.horario || '',
+        programa: item.programa,
+        apresentador: item.apresentador || '',
+        descricao: item.descricao || '',
+      };
+      await api.post('/programacao', novoPrograma);
+      setStatus({ type: 'success', message: 'Programa duplicado com sucesso.' });
+      loadProgramacao();
+    } catch (error) {
+      console.error('Erro ao duplicar programa:', error);
+      setStatus({ type: 'error', message: 'Erro ao duplicar programa.' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -491,13 +551,14 @@ export default function ProgramacaoPage() {
               <div className="mb-8 bg-black/40 backdrop-blur-lg rounded-xl p-6 border border-gray-700">
                 <h2 className="text-xl font-bold text-white mb-4">Programas Não Agendados</h2>
                 <p className="text-gray-400 text-sm mb-4">Passe o mouse sobre um programa e arraste pelo ícone ☰ para agendar na grade</p>
-                <SortableContext items={programasNaoAgendados.map(p => p.id.toString())}>
+                <SortableContext items={programasNaoAgendados.map(p => `nao-agendado-${p.id}`)}>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {programasNaoAgendados.map((item) => (
                       <SortableItem
                         key={item.id}
                         id={item.id.toString()}
                         item={item}
+                        prefix="nao-agendado"
                         onEdit={handleEdit}
                         onDelete={handleDelete}
                       />
@@ -522,6 +583,7 @@ export default function ProgramacaoPage() {
                       programas={programasNoHorario}
                       onEdit={handleEdit}
                       onDelete={handleDelete}
+                      onDuplicate={handleDuplicate}
                     />
                   );
                 })}
