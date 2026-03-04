@@ -227,9 +227,10 @@ export default function ProgramacaoPage() {
     // Extrair o ID real do item (remover prefixo se houver)
     let activeId = typeof event.active.id === 'string' ? event.active.id : event.active.id.toString();
     
-    // Se tem prefixo (ex: "nao-agendado-123"), remover para pegar só o ID
+    // Se tem prefixo (ex: "nao-agendado-123" ou "grade-Segunda-feira-06:00-123"), pegar o último número
     if (activeId.includes('-')) {
       const parts = activeId.split('-');
+      // Pegar o último elemento que deve ser o ID numérico
       activeId = parseInt(parts[parts.length - 1]);
     } else {
       activeId = parseInt(activeId);
