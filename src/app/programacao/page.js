@@ -163,6 +163,7 @@ export default function ProgramacaoPage() {
   const [viewMode, setViewMode] = useState('grade');
   const [activeId, setActiveId] = useState(null);
   const [selectedDia, setSelectedDia] = useState('Segunda-feira');
+  const [loadingTimeout, setLoadingTimeout] = useState(null);
   const [formData, setFormData] = useState({
     diaSemana: '',
     horario: '',
@@ -210,7 +211,21 @@ export default function ProgramacaoPage() {
     }
   };
 
-  const loadProgramacao = async () => {
+  const loadProgramacao = async (retryCount = 0) => {
+    // Cancelar timeout anterior se existir
+    if (loadingTimeout) {
+      clearTimeout(loadingTimeout);
+    }
+
+    // Se já está carregando, aguardar um pouco antes de tentar novamente
+    if (loading && retryCount === 0) {
+      const timeout = setTimeout(() => {
+        loadProgramacao(1);
+      }, 500);
+      setLoadingTimeout(timeout);
+      return;
+    }
+
     try {
       const response = await api.get('/programacao');
       if (response.data.success) {
@@ -218,9 +233,26 @@ export default function ProgramacaoPage() {
       }
     } catch (error) {
       console.error('Erro ao carregar programação:', error);
-      setStatus({ type: 'error', message: 'Erro ao carregar programação.' });
+      
+      // Se for erro 429 (Too Many Requests), aguardar e tentar novamente
+      if (error.response?.status === 429 && retryCount < 3) {
+        const retryDelay = Math.pow(2, retryCount) * 1000; // Exponential backoff: 1s, 2s, 4s
+        console.log(`⏳ Rate limit atingido. Tentando novamente em ${retryDelay}ms...`);
+        setTimeout(() => {
+          loadProgramacao(retryCount + 1);
+        }, retryDelay);
+        return;
+      }
+      
+      setStatus({ 
+        type: 'error', 
+        message: error.response?.status === 429 
+          ? 'Muitas requisições. Aguarde alguns segundos e recarregue a página.' 
+          : 'Erro ao carregar programação.' 
+      });
     } finally {
       setLoading(false);
+      setLoadingTimeout(null);
     }
   };
 
@@ -349,7 +381,10 @@ export default function ProgramacaoPage() {
         
         if (response.data.success) {
           setStatus({ type: 'success', message: 'Programa movido com sucesso.' });
-          await loadProgramacao();
+          // Aguardar um pouco antes de recarregar para evitar rate limit
+          setTimeout(() => {
+            loadProgramacao();
+          }, 300);
         }
       } catch (error) {
         console.error('Erro ao mover programa:', error);
@@ -389,7 +424,10 @@ export default function ProgramacaoPage() {
         apresentador: '',
         descricao: '',
       });
-      loadProgramacao();
+      // Aguardar um pouco antes de recarregar para evitar rate limit
+      setTimeout(() => {
+        loadProgramacao();
+      }, 300);
     } catch (error) {
       console.error('Erro ao salvar programação:', error);
       setStatus({ type: 'error', message: 'Erro ao salvar programação.' });
@@ -418,7 +456,10 @@ export default function ProgramacaoPage() {
     try {
       await api.delete(`/programacao/${deleteConfirm.id}`);
       setStatus({ type: 'success', message: 'Programa deletado com sucesso.' });
-      loadProgramacao();
+      // Aguardar um pouco antes de recarregar para evitar rate limit
+      setTimeout(() => {
+        loadProgramacao();
+      }, 300);
     } catch (error) {
       console.error('Erro ao deletar programação:', error);
       setStatus({ type: 'error', message: 'Erro ao deletar programação.' });
@@ -439,7 +480,10 @@ export default function ProgramacaoPage() {
       };
       await api.post('/programacao', novoPrograma);
       setStatus({ type: 'success', message: 'Programa duplicado com sucesso.' });
-      loadProgramacao();
+      // Aguardar um pouco antes de recarregar para evitar rate limit
+      setTimeout(() => {
+        loadProgramacao();
+      }, 300);
     } catch (error) {
       console.error('Erro ao duplicar programa:', error);
       setStatus({ type: 'error', message: 'Erro ao duplicar programa.' });
