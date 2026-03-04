@@ -37,7 +37,7 @@ function DroppableSlot({ id, horario, dia, programas, onEdit, onDelete, onDuplic
             <div className="space-y-1.5">
               {programas.map((item) => (
                 <SortableItem
-                  key={item.id}
+                  key={`grade-${dia}-${horario}-${item.id}`}
                   id={item.id.toString()}
                   item={item}
                   prefix={`grade-${dia}-${horario}`}
@@ -224,57 +224,82 @@ export default function ProgramacaoPage() {
   };
 
   const handleDragStart = (event) => {
+    // Sempre limpar o activeId primeiro
+    setActiveId(null);
+    
     // Extrair o ID real do item (remover prefixo se houver)
-    let activeId = typeof event.active.id === 'string' ? event.active.id : event.active.id.toString();
+    const activeIdString = typeof event.active.id === 'string' ? event.active.id : String(event.active.id);
+    
+    console.log('🔵 Drag START - Active ID original:', activeIdString);
     
     // Se tem prefixo (ex: "nao-agendado-123" ou "grade-Segunda-feira-06:00-123"), pegar o último número
-    if (activeId.includes('-')) {
-      const parts = activeId.split('-');
+    let activeId;
+    if (activeIdString.includes('-')) {
+      const parts = activeIdString.split('-');
       // Pegar o último elemento que deve ser o ID numérico
       activeId = parseInt(parts[parts.length - 1]);
+      console.log('🔵 Extraído ID numérico:', activeId, 'de:', activeIdString);
     } else {
-      activeId = parseInt(activeId);
+      activeId = parseInt(activeIdString);
+    }
+    
+    if (isNaN(activeId)) {
+      console.error('❌ ID inválido extraído:', activeIdString);
+      return;
     }
     
     setActiveId(activeId);
     // Encontrar o item correto
     const item = programacao.find(p => p.id === activeId);
-    console.log('Drag start - ID:', activeId, 'Active ID original:', event.active.id, 'Item encontrado:', item);
+    console.log('🔵 Item encontrado:', item ? `${item.programa} (ID: ${item.id})` : 'NÃO ENCONTRADO');
   };
 
   const handleDragEnd = async (event) => {
     const { active, over } = event;
+    
+    console.log('🟢 Drag END - Active ID:', active.id, 'Over ID:', over?.id);
+
+    // Sempre limpar o activeId no final
     setActiveId(null);
 
     if (!over) {
+      console.log('🟢 Sem over, cancelando');
       return;
     }
 
     // Se arrastou para o mesmo lugar, não faz nada
     if (active.id === over.id) {
+      console.log('🟢 Mesmo lugar, cancelando');
       return;
     }
 
     // Extrair o ID real do item (remover prefixo se houver)
-    let activeId = typeof active.id === 'string' ? active.id : active.id.toString();
+    const activeIdString = typeof active.id === 'string' ? active.id : String(active.id);
     
-    // Se tem prefixo (ex: "nao-agendado-123" ou "grade-Segunda-feira-06:00-123"), pegar o último número
-    if (activeId.includes('-')) {
-      const parts = activeId.split('-');
+    let activeId;
+    if (activeIdString.includes('-')) {
+      const parts = activeIdString.split('-');
       // Pegar o último elemento que deve ser o ID numérico
       activeId = parseInt(parts[parts.length - 1]);
+      console.log('🟢 Extraído ID numérico:', activeId, 'de:', activeIdString);
     } else {
-      activeId = parseInt(activeId);
+      activeId = parseInt(activeIdString);
+    }
+    
+    if (isNaN(activeId)) {
+      console.error('❌ ID inválido extraído:', activeIdString);
+      return;
     }
     
     const item = programacao.find(p => p.id === activeId);
     
     if (!item) {
-      console.log('Item não encontrado:', activeId, 'Active ID original:', active.id, 'Programação:', programacao.map(p => ({ id: p.id, programa: p.programa })));
+      console.error('❌ Item não encontrado! ID:', activeId, 'Active ID original:', active.id);
+      console.error('❌ Programação disponível:', programacao.map(p => ({ id: p.id, programa: p.programa })));
       return;
     }
     
-    console.log('Movendo item:', item.programa, 'ID:', item.id, 'Para slot:', over.data?.current);
+    console.log('✅ Movendo item:', item.programa, 'ID:', item.id, 'Para slot:', over.data?.current);
 
     // Verificar se arrastou para um slot
     if (over.data?.current?.type === 'slot') {
@@ -556,7 +581,7 @@ export default function ProgramacaoPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {programasNaoAgendados.map((item) => (
                       <SortableItem
-                        key={item.id}
+                        key={`nao-agendado-${item.id}`}
                         id={item.id.toString()}
                         item={item}
                         prefix="nao-agendado"
