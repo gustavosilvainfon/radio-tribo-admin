@@ -61,7 +61,8 @@ function DroppableSlot({ id, horario, dia, programas, onEdit, onDelete, onDuplic
 // Componente de item arrastável
 function SortableItem({ id, item, onEdit, onDelete, onDuplicate, prefix = '' }) {
   // Usar prefixo para evitar conflitos de ID entre diferentes listas
-  const itemId = prefix ? `${prefix}-${id}` : id.toString();
+  // Garantir que o ID seja sempre string e único
+  const itemId = prefix ? `${prefix}-${id}` : `item-${id}`;
   const {
     attributes,
     listeners,
