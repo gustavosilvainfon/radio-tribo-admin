@@ -164,6 +164,7 @@ export default function ProgramacaoPage() {
   const [activeId, setActiveId] = useState(null);
   const [selectedDia, setSelectedDia] = useState('Segunda-feira');
   const [loadingTimeout, setLoadingTimeout] = useState(null);
+  const [programacaoCopiada, setProgramacaoCopiada] = useState(null);
   const [formData, setFormData] = useState({
     diaSemana: '',
     horario: '',
@@ -499,6 +500,114 @@ export default function ProgramacaoPage() {
     }
   };
 
+  const handleCopiarProgramacao = () => {
+    const programasDoDia = programacao.filter(
+      p => p.diaSemana === selectedDia && p.horario
+    );
+    
+    if (programasDoDia.length === 0) {
+      setStatus({ type: 'error', message: 'Não há programação para copiar neste dia.' });
+      return;
+    }
+
+    // Salvar no estado e localStorage
+    setProgramacaoCopiada({
+      diaOrigem: selectedDia,
+      programas: programasDoDia.map(p => ({
+        horario: p.horario,
+        programa: p.programa,
+        apresentador: p.apresentador || '',
+        descricao: p.descricao || '',
+      }))
+    });
+    
+    localStorage.setItem('programacaoCopiada', JSON.stringify({
+      diaOrigem: selectedDia,
+      programas: programasDoDia.map(p => ({
+        horario: p.horario,
+        programa: p.programa,
+        apresentador: p.apresentador || '',
+        descricao: p.descricao || '',
+      }))
+    }));
+
+    setStatus({ type: 'success', message: `Programação de ${selectedDia} copiada! (${programasDoDia.length} programas)` });
+  };
+
+  const handleColarProgramacao = async () => {
+    if (!programacaoCopiada || !programacaoCopiada.programas || programacaoCopiada.programas.length === 0) {
+      // Tentar carregar do localStorage
+      const copiada = localStorage.getItem('programacaoCopiada');
+      if (!copiada) {
+        setStatus({ type: 'error', message: 'Nenhuma programação copiada. Use o botão "Copiar" primeiro.' });
+        return;
+      }
+      setProgramacaoCopiada(JSON.parse(copiada));
+    }
+
+    const copiada = programacaoCopiada || JSON.parse(localStorage.getItem('programacaoCopiada'));
+    
+    if (!copiada || !copiada.programas || copiada.programas.length === 0) {
+      setStatus({ type: 'error', message: 'Nenhuma programação copiada.' });
+      return;
+    }
+
+    if (copiada.diaOrigem === selectedDia) {
+      setStatus({ type: 'error', message: 'Não é possível colar no mesmo dia. Selecione outro dia.' });
+      return;
+    }
+
+    try {
+      setSaving(true);
+      
+      // Deletar programas existentes do dia de destino
+      const programasExistentes = programacao.filter(
+        p => p.diaSemana === selectedDia && p.horario
+      );
+      
+      // Deletar programas existentes
+      for (const programa of programasExistentes) {
+        try {
+          await api.delete(`/programacao/${programa.id}`);
+        } catch (error) {
+          console.error('Erro ao deletar programa existente:', error);
+        }
+      }
+
+      // Aguardar um pouco antes de criar novos
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Criar novos programas com o dia de destino
+      for (const programa of copiada.programas) {
+        try {
+          await api.post('/programacao', {
+            diaSemana: selectedDia,
+            horario: programa.horario,
+            programa: programa.programa,
+            apresentador: programa.apresentador,
+            descricao: programa.descricao,
+          });
+          // Pequeno delay entre criações para evitar rate limit
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+          console.error('Erro ao criar programa:', error);
+        }
+      }
+
+      setStatus({ type: 'success', message: `Programação colada em ${selectedDia}! (${copiada.programas.length} programas)` });
+      
+      // Aguardar um pouco antes de recarregar para evitar rate limit
+      setTimeout(() => {
+        loadProgramacao();
+      }, 500);
+    } catch (error) {
+      console.error('Erro ao colar programação:', error);
+      setStatus({ type: 'error', message: 'Erro ao colar programação.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openNewModal = () => {
     setEditingItem(null);
     setFormData({
@@ -608,20 +717,48 @@ export default function ProgramacaoPage() {
 
         {viewMode === 'grade' ? (
           <>
-            {/* Seletor de Dia */}
+            {/* Seletor de Dia e Botões Copiar/Colar */}
             <div className="mb-6 bg-black/40 backdrop-blur-lg rounded-xl p-4 border border-gray-700">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Selecione o dia da semana:
-              </label>
-              <select
-                value={selectedDia}
-                onChange={(e) => setSelectedDia(e.target.value)}
-                className="px-4 py-2 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition"
-              >
-                {diasSemana.map((dia) => (
-                  <option key={dia} value={dia}>{dia}</option>
-                ))}
-              </select>
+              <div className="flex items-end space-x-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Selecione o dia da semana:
+                  </label>
+                  <select
+                    value={selectedDia}
+                    onChange={(e) => setSelectedDia(e.target.value)}
+                    className="w-full px-4 py-2 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500 transition"
+                  >
+                    {diasSemana.map((dia) => (
+                      <option key={dia} value={dia}>{dia}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={handleCopiarProgramacao}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition transform hover:scale-105 flex items-center space-x-2"
+                    title="Copiar programação deste dia"
+                  >
+                    <span>📋</span>
+                    <span>Copiar</span>
+                  </button>
+                  <button
+                    onClick={handleColarProgramacao}
+                    disabled={saving || (!programacaoCopiada && !localStorage.getItem('programacaoCopiada'))}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold rounded-lg transition transform hover:scale-105 flex items-center space-x-2"
+                    title="Colar programação copiada neste dia"
+                  >
+                    <span>📌</span>
+                    <span>Colar</span>
+                  </button>
+                </div>
+              </div>
+              {programacaoCopiada && (
+                <div className="mt-3 text-sm text-gray-400">
+                  Programação copiada de: <span className="text-blue-400 font-bold">{programacaoCopiada.diaOrigem}</span> ({programacaoCopiada.programas.length} programas)
+                </div>
+              )}
             </div>
 
             {/* Lista de Programas Não Agendados */}
