@@ -405,7 +405,16 @@ export default function ProgramacaoPage() {
     try {
       if (editingItem) {
         await api.put(`/programacao/${editingItem.id}`, formData);
-        setStatus({ type: 'success', message: editingItem ? 'Programa atualizado com sucesso.' : 'Programa criado com sucesso.' });
+        setStatus({ type: 'success', message: 'Programa atualizado com sucesso.' });
+      } else {
+        const dataToSend = {
+          ...formData,
+          diaSemana: formData.diaSemana || 'Não agendado',
+          horario: formData.horario || '',
+        };
+        await api.post('/programacao', dataToSend);
+        setStatus({ type: 'success', message: 'Programa criado com sucesso.' });
+      }
       setShowModal(false);
       setEditingItem(null);
       setFormData({
